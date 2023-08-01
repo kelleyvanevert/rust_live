@@ -1,0 +1,16 @@
+[package]
+name = "using_winit_wgpu"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+clap = { version = "4.3.19", features = ["derive"] }
+env_logger = "0.10.0"
+log = "0.4.19"
+pollster = "0.3.0"
+wgpu = "0.17.0"
+wgpu_text = "0.8.3"
+cgmath = "0.18"
+bytemuck = { version = "1.12", features = ["derive"] }
+winit = { path = "../winit" }
+# this is the latest winit + self-patched version of [https://github.com/amrbashir/winit/tree/dnd-cursor-location]
