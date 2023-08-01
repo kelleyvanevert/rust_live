@@ -9,11 +9,11 @@ pub struct Pos {
 }
 
 impl Pos {
-    pub fn order(a: Pos, b: Pos) -> (Pos, Pos) {
+    pub fn order(a: Pos, b: Pos) -> Range {
         if a < b {
-            (a, b)
+            (a, b).into()
         } else {
-            (b, a)
+            (b, a).into()
         }
     }
 
@@ -75,4 +75,50 @@ impl Ord for Pos {
             Ordering::Equal => self.col.cmp(&other.col),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Range {
+    pub start: Pos,
+    pub end: Pos,
+}
+
+impl Range {
+    pub fn contains(self, pos: Pos) -> bool {
+        self.start <= pos && pos <= self.end
+    }
+
+    pub fn overlap(a: Range, b: Range) -> bool {
+        a.contains(b.start) || a.contains(b.end) || b.contains(a.start) || b.contains(a.end)
+    }
+
+    pub fn cover(a: Range, b: Range) -> Range {
+        Range {
+            start: a.start.min(b.start),
+            end: a.end.max(b.end),
+        }
+    }
+}
+
+impl From<(Pos, Pos)> for Range {
+    fn from((start, end): (Pos, Pos)) -> Self {
+        Self { start, end }
+    }
+}
+
+#[test]
+fn test_contains() {
+    assert_eq!(
+        Range::overlap(
+            Range {
+                start: Pos { row: 4, col: 8 },
+                end: Pos { row: 4, col: 11 }
+            },
+            Range {
+                start: Pos { row: 4, col: 18 },
+                end: Pos { row: 4, col: 18 }
+            },
+        ),
+        false
+    );
 }

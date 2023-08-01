@@ -4,7 +4,7 @@ mod highlight;
 mod render;
 mod util;
 
-use live_editor_state::{Direction, EditorState, LineData, Pos, Token};
+use live_editor_state::{Direction, EditorState, LineData, Pos, SelectionId, Token};
 use std::time::{Duration, Instant, SystemTime};
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -50,7 +50,7 @@ run off
         .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley ")),
     );
 
-    let mut is_selecting = false;
+    let mut is_selecting: Option<SelectionId> = None;
     let mut shift_pressed = false;
     let mut alt_pressed = false;
     let mut meta_or_ctrl_pressed = false;
@@ -169,15 +169,14 @@ run off
                 },
                 WindowEvent::MouseInput { state, button, .. } => {
                     if let Some(p) = mouse_at && state == ElementState::Pressed && button == MouseButton::Left {
-                        is_selecting = true;
                         let pos = render.px_to_pos(p);
                         if alt_pressed {
-                            editor_state.add_caret(pos);
+                            is_selecting = Some(editor_state.add_caret(pos));
                         } else{
-                            editor_state.set_single_caret(pos);
+                            is_selecting = Some(editor_state.set_single_caret(pos));
                         }
                     } else if state == ElementState::Released && button == MouseButton::Left {
-                        is_selecting = false;
+                        is_selecting = None;
                     }
                 }
                 WindowEvent::CursorEntered { .. } => {
@@ -193,9 +192,9 @@ run off
                     let p = (position.x as f32, position.y as f32);
                     mouse_at = Some(p);
 
-                    if is_selecting {
+                    if let Some(id) = is_selecting {
                         let caret = render.px_to_pos(p);
-                        editor_state.drag_select(caret);
+                        editor_state.drag_select(caret, id);
                     }
                 }
                 WindowEvent::Moved(u) => {

@@ -1,20 +1,34 @@
 use std::cmp::Ordering;
 
 use super::{
+    direction::Direction,
     line_data::{EditResult, InsertionInfo, RemovalInfo},
-    pos::Pos,
+    pos::{Pos, Range},
 };
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub struct SelectionId(usize);
+
+impl SelectionId {
+    pub fn start() -> Self {
+        Self(0)
+    }
+
+    pub fn next(&self) -> Self {
+        Self(self.0 + 1)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
-    pub id: usize,
+    pub id: SelectionId,
     pub anchor: Option<Pos>,
     pub caret: Pos,
     pub desired_col: Option<i32>,
 }
 
 impl Selection {
-    pub fn has_selection(&self) -> Option<(Pos, Pos)> {
+    pub fn has_selection(&self) -> Option<Range> {
         self.anchor.and_then(|anchor| {
             if anchor == self.caret {
                 None
@@ -22,6 +36,27 @@ impl Selection {
                 Some(Pos::order(self.caret, anchor))
             }
         })
+    }
+
+    pub fn range(&self) -> Range {
+        Pos::order(self.caret, self.anchor.unwrap_or(self.caret))
+    }
+
+    pub fn set_range(&mut self, range: Range, caret_on_left: bool) {
+        if range.start == range.end {
+            self.caret = range.start;
+            self.anchor = None;
+        } else if caret_on_left {
+            self.caret = range.start;
+            self.anchor = Some(range.end);
+        } else {
+            self.caret = range.end;
+            self.anchor = Some(range.start);
+        }
+    }
+
+    pub fn overlaps(&self, other: &Selection) -> bool {
+        Range::overlap(self.range(), other.range())
     }
 
     pub fn adjust(&mut self, res: EditResult) {
@@ -107,6 +142,24 @@ impl Selection {
         }
 
         self.caret = caret;
+    }
+
+    pub fn merge_with(
+        &mut self,
+        other: &Selection,
+        prefer_caret_position: Option<Direction>,
+    ) -> bool {
+        let caret_on_left = prefer_caret_position
+            .map(|dir| dir == Direction::Up || dir == Direction::Left)
+            .unwrap_or(self.anchor.is_some_and(|anchor| anchor < self.caret));
+
+        let cover = Range::cover(self.range(), other.range());
+        self.set_range(cover, caret_on_left);
+
+        // seems really edge-casey to try to save this one...
+        self.desired_col = None;
+
+        true
     }
 }
 
