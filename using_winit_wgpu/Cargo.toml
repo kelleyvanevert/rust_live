@@ -15,3 +15,8 @@ bytemuck = { version = "1.12", features = ["derive"] }
 live_editor_state = { path = "../editor_state" }
 winit = { path = "../winit" }
 # this is the latest winit + self-patched version of [https://github.com/amrbashir/winit/tree/dnd-cursor-location]
+
+[dependencies.image]
+version = "0.24.6"
+default-features = false
+features = ["png", "jpeg"]
