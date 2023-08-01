@@ -16,3 +16,25 @@ Instead of going there the most pragmatic way (i.e. making a web app, using web 
   - Building the logic around editing code with multiple selections, etc., is quite challenging but fun on its own :P I decided that I might as well make this deep-dive, after I already touched on it with another hobby-project of mine: [ASCII recipes](https://asciirecip.es/)
 
 ![](pics/drawing_waveforms.png)
+
+**TODO list**
+
+- Editor logic
+
+  - [ ] Cmd+D to select next occurrece (if 1 selection)
+  - [ ] move by word
+  - [ ] double click selects word
+
+- Widgets
+
+  - [ ] Widget state + drawing pixels to the widget in editor
+  - [ ] Reading in sample + drawing waveform
+
+- Language
+
+  - [ ] Syntax concepting, parsing, highlighting
+
+- DSP
+  - [ ] Generate a sine wave
+  - [ ] Play a sample
+  - ...and so much more
