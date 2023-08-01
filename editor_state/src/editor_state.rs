@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use super::{
     direction::Direction,
     line_data::{EditResult, LineData},
@@ -12,140 +14,61 @@ pub struct LineSelection {
 }
 
 pub struct EditorState {
-    lines: LineData,
+    linedata: LineData,
 
-    /** Selection ID increment */
     next_selection_id: SelectionId,
-    // TODO: enforce invariant: no overlap (and also not immediately adjacent on same line)
     selections: Vec<Selection>,
 }
 
 impl EditorState {
     pub fn new() -> Self {
         EditorState {
-            lines: LineData::new(),
+            linedata: LineData::new(),
             next_selection_id: SelectionId::start(),
             selections: vec![],
         }
     }
 
     pub fn with_linedata(mut self, linedata: LineData) -> Self {
-        self.lines = linedata;
+        self.linedata = linedata;
         self
     }
 
+    /** Ensure that no two selections overlap */
     fn normalize_selections(
         &mut self,
         selecting_id: Option<SelectionId>,
         prefer_caret_position: Option<Direction>,
     ) {
-        // (TODO make sure to not remove the one that is being selected)
+        let mut normalized = vec![];
 
-        let mut cloned: Vec<_> = self.selections.drain(0..).collect();
-
-        while let Some(mut next) = cloned.pop() {
-            cloned.retain(|other| {
-                if !next.overlaps(other) {
-                    return true;
-                }
-
-                if selecting_id == Some(next.id) {
-                    // just kill the other
-                    // (noop)
-                } else if selecting_id == Some(other.id) {
-                    // just kill self
-                    next = other.clone();
-                } else {
-                    let merged = next.merge_with(other, prefer_caret_position);
-                    if !merged {
-                        println!("WTH");
+        while let Some(mut next) = self.selections.pop() {
+            self.selections.retain(|other| {
+                if next.overlaps(other) {
+                    if selecting_id == Some(next.id) {
+                        // just kill the other
+                        // (noop)
+                    } else if selecting_id == Some(other.id) {
+                        // just kill self
+                        next = other.clone();
+                    } else {
+                        next.merge_with(other, prefer_caret_position);
                     }
+
+                    return false;
                 }
 
-                return false;
+                return true;
             });
 
-            self.selections.push(next);
+            normalized.push(next);
         }
 
-        // let mut arr: Vec<_> = self
-        //     .selections
-        //     .drain(0..)
-        //     .into_iter()
-        //     .map(|s| (s.range(), s))
-        //     .collect();
-
-        // arr.sort_by_key(|t| t.0.start);
-
-        // while let Some((range, sel)) = arr.pop() {
-        //     while let Some(b) = arr.pop() {
-        //         //
-        //     }
-
-        //     self.selections.push(sel);
-        // }
-
-        // if let Some((mut range_a, mut a)) = arr.pop() {
-        //     for (mut range_b, mut b) in arr {
-        //         if Range::overlap(range_a, range_b) {
-        //             //
-        //         }
-
-        //         self.selections.push(a);
-        //     }
-        //     // while let Some((mut range_b, mut b)) = arr.pop() {
-        //     //     if Range::overlap(range_a, range_b) {
-        //     //         // if self.selecting == Some(b.id) {
-        //     //         //     // just skip selection A
-        //     //         // } else {
-        //     //         // }
-
-        //     //         // continue;
-        //     //     }
-
-        //     //     self.selections.push(a);
-        //     //     a = b;
-        //     //     range_a = range_b;
-        //     // }
-
-        //     self.selections.push(a);
-        // }
-
-        // let arr: Vec<(Range, Selection)> = arr.into_iter().fold(
-        //     vec![],
-        //     |mut normalized, (curr_range, mut curr_selection)| {
-        //         let prev = normalized.pop();
-
-        //         if let Some(prev) = prev {
-        //             if !curr_selection.overlaps(&prev.1) {
-        //                 normalized.push(prev);
-        //             } else {
-        //                 if self.selecting == Some(curr_selection.id) {
-        //                     // nothing, just kill the other
-        //                 } else {
-        //                     let merged =
-        //                         curr_selection.maybe_merge_with(&prev.1, prefer_caret_position);
-        //                     if merged {
-        //                         println!("merged");
-        //                         if self.selecting == Some(prev.1.id) {
-        //                             self.selecting = Some(curr_selection.id);
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         }
-
-        //         normalized.push((curr_range, curr_selection));
-
-        //         normalized
-        //     },
-        // );
-
-        // self.selections = arr.into_iter().map(|t| t.1).collect();
+        self.selections = normalized;
     }
 
     pub fn linedata(&self) -> &LineData {
-        &self.lines
+        &self.linedata
     }
 
     pub fn caret_positions(&self) -> Vec<Pos> {
@@ -167,13 +90,13 @@ impl EditorState {
                     line_selections.push(LineSelection {
                         row: start.row,
                         col_start: start.col,
-                        col_end: self.lines.line_width(start.row),
+                        col_end: self.linedata.line_width(start.row),
                     });
                     for row in (start.row + 1)..end.row {
                         line_selections.push(LineSelection {
                             row,
                             col_start: 0,
-                            col_end: self.lines.line_width(row),
+                            col_end: self.linedata.line_width(row),
                         });
                     }
                     line_selections.push(LineSelection {
@@ -189,7 +112,7 @@ impl EditorState {
     }
 
     fn mk_selection(&mut self, caret: Pos) -> (SelectionId, Selection) {
-        debug_assert_eq!(caret, self.lines.snap(caret));
+        debug_assert_eq!(caret, self.linedata.snap(caret));
 
         let id = self.next_selection_id;
 
@@ -206,7 +129,7 @@ impl EditorState {
     }
 
     pub fn add_caret(&mut self, pos: Pos) -> SelectionId {
-        let pos = self.lines.snap(pos);
+        let pos = self.linedata.snap(pos);
         let (id, selection) = self.mk_selection(pos);
 
         self.selections.push(selection);
@@ -216,7 +139,7 @@ impl EditorState {
     }
 
     pub fn set_single_caret(&mut self, pos: Pos) -> SelectionId {
-        let pos = self.lines.snap(pos);
+        let pos = self.linedata.snap(pos);
         let (id, selection) = self.mk_selection(pos);
 
         self.selections = vec![selection];
@@ -230,7 +153,7 @@ impl EditorState {
 
     pub fn drag_select(&mut self, caret: Pos, id: SelectionId) {
         if let Some(s) = self.selections.iter_mut().find(|s| s.id == id) {
-            s.move_caret_to(self.lines.snap(caret), true);
+            s.move_caret_to(self.linedata.snap(caret), true);
         }
 
         self.normalize_selections(Some(id), None);
@@ -238,19 +161,19 @@ impl EditorState {
 
     pub fn move_caret(&mut self, dir: Direction, selecting: bool) {
         for s in &mut self.selections {
-            self.lines.move_selection_caret(s, dir, selecting);
+            self.linedata.move_selection_caret(s, dir, selecting);
         }
 
         self.normalize_selections(None, Some(dir))
     }
 
     pub fn clear(&mut self) {
-        self.lines = LineData::new()
+        self.linedata = LineData::new()
     }
 
     pub fn insert(&mut self, pos: Pos, data: LineData, set_single_caret_after: bool) {
-        let pos = self.lines.snap(pos);
-        let info = self.lines.insert(pos, data);
+        let pos = self.linedata.snap(pos);
+        let info = self.linedata.insert(pos, data);
 
         if set_single_caret_after {
             self.set_single_caret(info.end);
@@ -272,7 +195,7 @@ impl EditorState {
             !contained_entirely
         });
 
-        let info = self.lines.remove(start, end);
+        let info = self.linedata.remove(start, end);
 
         for s in &mut self.selections {
             s.adjust(EditResult::Removal { info });
@@ -282,28 +205,32 @@ impl EditorState {
     }
 
     pub fn type_char(&mut self, ch: char) {
-        for i in 0..self.selections.len() {
-            if let Some(Range { start, end }) = self.selections[i].has_selection() {
+        let mut done: HashSet<SelectionId> = HashSet::new();
+        while let Some(s) = self.selections.iter().find(|s| !done.contains(&s.id)) {
+            done.insert(s.id);
+
+            if let Some(Range { start, end }) = s.has_selection() {
                 self.remove(start, end);
                 self.insert(start, LineData::from(ch), false);
             } else {
-                self.insert(self.selections[i].caret, LineData::from(ch), false);
+                self.insert(s.caret, LineData::from(ch), false);
             }
         }
     }
 
     pub fn backspace(&mut self) {
-        for i in 0..self.selections.len() {
-            if let Some(Range { start, end }) = self.selections[i].has_selection() {
+        let mut done: HashSet<SelectionId> = HashSet::new();
+        while let Some(s) = self.selections.iter().find(|s| !done.contains(&s.id)) {
+            done.insert(s.id);
+
+            if let Some(Range { start, end }) = s.has_selection() {
                 self.remove(start, end);
             } else {
-                let (prev_pos, _) = self.lines.calculate_caret_move(
-                    self.selections[i].caret,
-                    None,
-                    Direction::Left,
-                );
+                let (prev_pos, _) =
+                    self.linedata
+                        .calculate_caret_move(s.caret, None, Direction::Left);
 
-                self.remove(prev_pos, self.selections[i].caret);
+                self.remove(prev_pos, s.caret);
             }
         }
     }

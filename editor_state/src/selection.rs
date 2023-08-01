@@ -6,7 +6,7 @@ use super::{
     pos::{Pos, Range},
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
 pub struct SelectionId(usize);
 
 impl SelectionId {
@@ -144,11 +144,7 @@ impl Selection {
         self.caret = caret;
     }
 
-    pub fn merge_with(
-        &mut self,
-        other: &Selection,
-        prefer_caret_position: Option<Direction>,
-    ) -> bool {
+    pub fn merge_with(&mut self, other: &Selection, prefer_caret_position: Option<Direction>) {
         let caret_on_left = prefer_caret_position
             .map(|dir| dir == Direction::Up || dir == Direction::Left)
             .unwrap_or(self.anchor.is_some_and(|anchor| anchor < self.caret));
@@ -158,8 +154,6 @@ impl Selection {
 
         // seems really edge-casey to try to save this one...
         self.desired_col = None;
-
-        true
     }
 }
 
