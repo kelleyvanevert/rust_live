@@ -1,3 +1,3 @@
 fn main() {
-    using_winit_wgpu::run();
+    live_editor::run();
 }

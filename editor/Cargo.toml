@@ -1,5 +1,5 @@
 [package]
-name = "using_winit_wgpu"
+name = "live_editor"
 version = "0.1.0"
 edition = "2021"
 
@@ -14,8 +14,8 @@ cgmath = "0.18"
 bytemuck = { version = "1.12", features = ["derive"] }
 live_editor_state = { path = "../editor_state" }
 winit = { path = "../winit" }
-tao = "0.21.1"
 # this is the latest winit + self-patched version of [https://github.com/amrbashir/winit/tree/dnd-cursor-location]
+tao = "0.21.1"
 
 [dependencies.image]
 version = "0.24.6"

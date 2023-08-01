@@ -1722,6 +1722,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "57bcfdad1b858c2db7c38303a6d2ad4dfaf5eb53dfeb0910128b2c26d6158503"
 
 [[package]]
+name = "live_editor"
+version = "0.1.0"
+dependencies = [
+ "bytemuck",
+ "cgmath",
+ "clap",
+ "env_logger",
+ "image",
+ "live_editor_state",
+ "log",
+ "pollster",
+ "tao",
+ "wgpu",
+ "wgpu_text",
+ "winit",
+]
+
+[[package]]
 name = "live_editor_state"
 version = "0.1.0"
 dependencies = [
@@ -2985,24 +3003,6 @@ dependencies = [
  "form_urlencoded",
  "idna",
  "percent-encoding",
-]
-
-[[package]]
-name = "using_winit_wgpu"
-version = "0.1.0"
-dependencies = [
- "bytemuck",
- "cgmath",
- "clap",
- "env_logger",
- "image",
- "live_editor_state",
- "log",
- "pollster",
- "tao",
- "wgpu",
- "wgpu_text",
- "winit",
 ]
 
 [[package]]
