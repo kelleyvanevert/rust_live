@@ -1,13 +1,15 @@
 mod buffer;
 mod widget_vertex;
 
+use crate::highlight::{syntax_highlight, CodeToken};
+
 use self::{
     buffer::{QuadBufferBuilder, Vertex},
     widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex},
 };
 use cgmath::SquareMatrix;
 use image::GenericImageView;
-use live_editor_state::{pos::Pos, EditorState, LineSelection, Token};
+use live_editor_state::{EditorState, LineSelection, Pos};
 use wgpu::util::DeviceExt;
 use wgpu_text::{
     glyph_brush::{
@@ -608,12 +610,12 @@ impl<'a> Render<'a> {
                 .with_color(CODE_COLOR)
         };
 
-        for (row, line) in editor_state.tokenize() {
+        for (row, line) in syntax_highlight(editor_state.linedata()) {
             for token in line {
                 match token {
-                    Token::Keyword { text, .. } => code_section.text.push(mk_keyword(text)),
-                    Token::Text { text, .. } => code_section.text.push(mk_regular(text)),
-                    Token::Widget { col, width, .. } => {
+                    CodeToken::Keyword { text, .. } => code_section.text.push(mk_keyword(text)),
+                    CodeToken::Text { text, .. } => code_section.text.push(mk_regular(text)),
+                    CodeToken::Widget { col, width, .. } => {
                         code_section.text.push(mk_widget_space(width));
 
                         let (x_start, y) = self.pos_to_px(Pos {

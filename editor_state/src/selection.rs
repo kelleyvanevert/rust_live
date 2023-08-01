@@ -1,8 +1,9 @@
 use std::cmp::Ordering;
 
-use crate::line_data::EditResult;
-
-use super::pos::Pos;
+use super::{
+    line_data::{EditResult, InsertionInfo, RemovalInfo},
+    pos::Pos,
+};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
@@ -26,12 +27,16 @@ impl Selection {
     pub fn adjust(&mut self, res: EditResult) {
         match res {
             EditResult::Insertion {
-                inserted_at,
-                delta,
-                added_lines,
+                info:
+                    InsertionInfo {
+                        start,
+                        delta,
+                        added_lines,
+                        ..
+                    },
             } => {
-                if self.caret >= inserted_at {
-                    if self.caret.row == inserted_at.row {
+                if self.caret >= start {
+                    if self.caret.row == start.row {
                         self.caret = self.caret + delta;
 
                         // this is very edge-casey, it would probably only occur if something other than user input would result in this insertion ... so maybe we should just remove it?
@@ -44,8 +49,8 @@ impl Selection {
                 }
 
                 if let Some(anchor) = self.anchor.as_mut() {
-                    if *anchor >= inserted_at {
-                        if anchor.row == inserted_at.row {
+                    if *anchor >= start {
+                        if anchor.row == start.row {
                             *anchor = *anchor + delta;
                         } else {
                             anchor.row += added_lines;
@@ -54,10 +59,13 @@ impl Selection {
                 }
             }
             EditResult::Removal {
-                start: _,
-                end,
-                delta,
-                removed_lines,
+                info:
+                    RemovalInfo {
+                        start: _,
+                        end,
+                        delta,
+                        removed_lines,
+                    },
             } => {
                 if self.caret >= end {
                     if self.caret.row == end.row {
@@ -119,12 +127,3 @@ impl Ord for Selection {
         }
     }
 }
-
-// impl From<Pos> for Selection {
-//     fn from(caret: Pos) -> Selection {
-//         Selection {
-//             anchor: None,
-//             caret,
-//         }
-//     }
-// }

@@ -1,9 +1,10 @@
 #![feature(let_chains)]
 
+mod highlight;
 mod render;
 mod util;
 
-use live_editor_state::{direction::Direction, EditorState};
+use live_editor_state::{Direction, EditorState, LineData, Pos, Token};
 use std::time::{Duration, Instant, SystemTime};
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -32,7 +33,22 @@ pub fn run() {
         .build(&event_loop)
         .unwrap();
 
-    let mut editor_state = EditorState::new();
+    let mut editor_state = EditorState::new().with_linedata(
+        LineData::from(
+            "A kelley wrote
+  some
+  code that' eventually
+  and bla bla bla bla bla
+
+run off
+  the screen
+  and bla bla bla
+",
+        )
+        .with_widget_at_pos(Pos { row: 2, col: 12 }, 0, 5)
+        .with_widget_at_pos(Pos { row: 6, col: 7 }, 1, 4)
+        .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley ")),
+    );
 
     let mut is_selecting = false;
     let mut shift_pressed = false;
@@ -201,7 +217,7 @@ pub fn run() {
                     let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
                     let pos = render.px_to_pos((position.x as f32, position.y as f32));
 
-                    editor_state.file_drop(pos, paths);
+                    editor_state.insert(pos, Token::Widget { id: 0, width: 5 }.into(), true);
                 }
                 _ => (),
             },

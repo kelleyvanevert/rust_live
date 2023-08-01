@@ -1,48 +1,55 @@
 use super::{direction::Direction, pos::Pos, selection::Selection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Cell {
+pub enum Token {
     Char(char),
     Widget { id: usize, width: usize },
 }
 
-impl Cell {
+impl Token {
     pub fn width(&self) -> usize {
         match self {
-            Cell::Char(_) => 1,
-            Cell::Widget { width, .. } => *width,
+            Token::Char(_) => 1,
+            Token::Widget { width, .. } => *width,
         }
     }
 }
 
+/**
+    Information about a line data insertion, that can be used for moving selections afterwards.
+
+    - The `delta` should be applied to all carets on the same line and _after_ (or at) the `start` position (where the insertion was done)
+    - The `added_lines` (which is the same as `delta.row`) should be applied as a row-delta to all subsequent lines
+*/
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]
-pub enum EditResult {
-    /**
-        Information about a line data insertion, that can be used for moving selections afterwards.
-
-        - The `delta` should be applied to all carets on the same line and _after_ (or at) the `inserted_at` position
-        - The `added_lines` (which is the same as `delta.row`) should be applied as a row-delta to all subsequent lines
-    */
-    Insertion {
-        inserted_at: Pos,
-        delta: Pos,
-        added_lines: i32,
-    },
-    /**
-        Information about a line data removal, that can be used for moving selections afterwards.
-
-        - The `delta` should be applied to all carets on the same line and _after_ (or at) the `end` position
-        - The `removed_lines` (which is the same as `- delta.row`) should be applied as a (negative) row-delta to all subsequent lines
-    */
-    Removal {
-        start: Pos,
-        end: Pos,
-        delta: Pos,
-        removed_lines: i32,
-    },
+pub struct InsertionInfo {
+    pub start: Pos,
+    pub end: Pos,
+    pub delta: Pos,
+    pub added_lines: i32,
 }
 
-pub struct LineData(Vec<Vec<Cell>>);
+/**
+    Information about a line data removal, that can be used for moving selections afterwards.
+
+    - The `delta` should be applied to all carets on the same line and _after_ (or at) the `end` position
+    - The `removed_lines` (which is the same as `- delta.row`) should be applied as a (negative) row-delta to all subsequent lines
+*/
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub struct RemovalInfo {
+    pub start: Pos,
+    pub end: Pos,
+    pub delta: Pos,
+    pub removed_lines: i32,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum EditResult {
+    Insertion { info: InsertionInfo },
+    Removal { info: RemovalInfo },
+}
+
+pub struct LineData(Vec<Vec<Token>>);
 
 impl LineData {
     pub fn new() -> LineData {
@@ -50,7 +57,7 @@ impl LineData {
     }
 
     pub fn with_widget_at_pos(mut self, pos: Pos, id: usize, width: usize) -> Self {
-        self.insert(pos, Cell::Widget { id, width }.into());
+        self.insert(pos, Token::Widget { id, width }.into());
         self
     }
 
@@ -68,10 +75,10 @@ impl LineData {
             return 0;
         }
 
-        self.0[row as usize].iter().map(Cell::width).sum::<usize>() as i32
+        self.0[row as usize].iter().map(Token::width).sum::<usize>() as i32
     }
 
-    pub fn lines(&self) -> &Vec<Vec<Cell>> {
+    pub fn lines(&self) -> &Vec<Vec<Token>> {
         &self.0
     }
 
@@ -152,7 +159,7 @@ impl LineData {
         selection.desired_col = desired_col;
     }
 
-    pub fn insert(&mut self, pos: Pos, data: LineData) -> EditResult {
+    pub fn insert(&mut self, pos: Pos, data: LineData) -> InsertionInfo {
         debug_assert_eq!(pos, self.snap(pos));
 
         let data = data.0;
@@ -198,17 +205,20 @@ impl LineData {
 
         let drow = (data.len() as i32 - 1).max(0);
 
-        EditResult::Insertion {
-            inserted_at: pos,
-            delta: Pos {
-                col: dcol,
-                row: drow,
-            },
+        let delta = Pos {
+            col: dcol,
+            row: drow,
+        };
+
+        InsertionInfo {
+            start: pos,
+            end: pos + delta,
+            delta,
             added_lines: drow,
         }
     }
 
-    pub fn remove(&mut self, start: Pos, end: Pos) -> EditResult {
+    pub fn remove(&mut self, start: Pos, end: Pos) -> RemovalInfo {
         debug_assert_eq!(start, self.snap(start));
         debug_assert_eq!(end, self.snap(end));
         debug_assert!(start <= end);
@@ -227,7 +237,7 @@ impl LineData {
 
         let removed_lines = end.row - start.row;
 
-        EditResult::Removal {
+        RemovalInfo {
             start,
             end,
             delta: Pos {
@@ -248,7 +258,7 @@ impl LineData {
         - whether the position was inside the text (end of line is valid);
         - whether the position was valid (i.e. not inside a widget).
     */
-    pub fn snap_nearest(&self, pos: Pos) -> (Pos, usize, Option<Cell>, Option<Cell>, bool, bool) {
+    pub fn snap_nearest(&self, pos: Pos) -> (Pos, usize, Option<Token>, Option<Token>, bool, bool) {
         let empty_line = &vec![];
 
         let mut inside = true;
@@ -329,26 +339,26 @@ impl From<&str> for LineData {
     fn from(str: &str) -> Self {
         LineData(
             str.split('\n')
-                .map(|line| line.chars().map(|ch| Cell::Char(ch)).collect::<Vec<_>>())
+                .map(|line| line.chars().map(|ch| Token::Char(ch)).collect::<Vec<_>>())
                 .collect(),
         )
     }
 }
 
-impl From<Vec<Vec<Cell>>> for LineData {
-    fn from(lines: Vec<Vec<Cell>>) -> Self {
+impl From<Vec<Vec<Token>>> for LineData {
+    fn from(lines: Vec<Vec<Token>>) -> Self {
         LineData(lines)
     }
 }
 
-impl From<Vec<Cell>> for LineData {
-    fn from(line: Vec<Cell>) -> Self {
+impl From<Vec<Token>> for LineData {
+    fn from(line: Vec<Token>) -> Self {
         LineData(vec![line])
     }
 }
 
-impl From<Cell> for LineData {
-    fn from(cell: Cell) -> Self {
+impl From<Token> for LineData {
+    fn from(cell: Token) -> Self {
         LineData(vec![vec![cell]])
     }
 }
@@ -358,21 +368,7 @@ impl From<char> for LineData {
         if ch == '\n' {
             LineData(vec![vec![], vec![]])
         } else {
-            LineData(vec![vec![Cell::Char(ch)]])
+            LineData(vec![vec![Token::Char(ch)]])
         }
     }
 }
-
-// impl std::ops::Index<Pos> for LineData {
-//     type Output = Option<Cell>;
-
-//     fn index(&self, pos: Pos) -> &Self::Output {
-//         &self.snap_nearest(pos).2
-//     }
-// }
-
-// impl std::ops::IndexMut<Pos> for LineData {
-//     fn index_mut(&mut self, index: Pos) -> &mut Self::Output {
-//         todo!()
-//     }
-// }
