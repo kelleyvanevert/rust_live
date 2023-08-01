@@ -83,6 +83,10 @@ impl EditorState {
         self.selections.iter().map(|s| s.caret).collect()
     }
 
+    pub fn has_selections(&self) -> bool {
+        self.selections.len() > 0
+    }
+
     pub fn visual_selections(&self) -> Vec<LineSelection> {
         let mut line_selections = vec![];
 
@@ -165,6 +169,24 @@ impl EditorState {
         id
     }
 
+    pub fn extend_selection_to(&mut self, pos: Pos) -> Option<usize> {
+        let Some(first_selection_id) = self.selections.iter().map(|s| s.id).min() else {
+            return None;
+        };
+
+        self.selections.retain_mut(|s| {
+            if s.id == first_selection_id {
+                s.desired_col = None;
+                s.caret = self.linedata.snap(pos);
+                true
+            } else {
+                false
+            }
+        });
+
+        Some(first_selection_id)
+    }
+
     pub fn copy(&self) -> Vec<LineData> {
         self.selections
             .iter()
@@ -209,13 +231,15 @@ impl EditorState {
             .collect::<Vec<_>>();
 
         for (data, id) in mapping {
-            if let Some(s) = self.selections.iter().find(|s| s.id == id) {
-                if let Some(range) = s.has_selection() {
-                    self.remove(range);
-                    self.insert(range.start, data, false);
-                } else {
-                    self.insert(s.caret, data, false);
-                }
+            let Some(s) = self.selections.iter().find(|s| s.id == id) else {
+                continue;
+            };
+
+            if let Some(range) = s.has_selection() {
+                self.remove(range);
+                self.insert(range.start, data, false);
+            } else {
+                self.insert(s.caret, data, false);
             }
         }
     }
@@ -312,13 +336,15 @@ impl EditorState {
         }
 
         for id in regular_tabs {
-            if let Some(s) = self.selections.iter().find(|s| s.id == id) {
-                self.insert(
-                    s.caret,
-                    (0..self.tab_width).map(|_| ' ').collect::<Vec<_>>().into(),
-                    false,
-                );
-            }
+            let Some(s) = self.selections.iter().find(|s| s.id == id) else {
+                continue;
+            };
+
+            self.insert(
+                s.caret,
+                (0..self.tab_width).map(|_| ' ').collect::<Vec<_>>().into(),
+                false,
+            );
         }
     }
 

@@ -94,6 +94,9 @@ run off
                         },
                     ..
                 } => match (logical_key.clone(), state) {
+                    // (Key::Escape, ElementState::Pressed) => {
+                    //     *control_flow = ControlFlow::Exit;
+                    // },
                     (Key::Delete, ElementState::Pressed) => {
                         editor_state.clear()
                     },
@@ -191,7 +194,13 @@ run off
                 WindowEvent::MouseInput { state, button, .. } => {
                     if let Some(p) = mouse_at && state == ElementState::Pressed && button == MouseButton::Left {
                         let pos = render.px_to_pos(p);
-                        if alt_pressed {
+                        if shift_pressed {
+                            if editor_state.has_selections() {
+                                is_selecting = editor_state.extend_selection_to(pos);
+                            } else {
+                                is_selecting = Some(editor_state.set_single_caret(pos));
+                            }
+                        } else if alt_pressed {
                             is_selecting = Some(editor_state.add_caret(pos));
                         } else{
                             is_selecting = Some(editor_state.set_single_caret(pos));
