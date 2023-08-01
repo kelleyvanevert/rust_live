@@ -78,8 +78,36 @@ impl LineData {
         self.0[row as usize].iter().map(Token::width).sum::<usize>() as i32
     }
 
+    pub fn line_empty(&self, row: usize) -> bool {
+        if row >= self.len() {
+            return true;
+        }
+
+        self.0[row as usize].len() == 0
+    }
+
+    pub fn row_indentation(&self, row: usize) -> usize {
+        if row >= self.len() {
+            return 0;
+        }
+
+        self.0[row as usize]
+            .iter()
+            .take_while(|&&c| c == Token::Char(' '))
+            .count()
+    }
+
     pub fn lines(&self) -> &Vec<Vec<Token>> {
         &self.0
+    }
+
+    pub fn end(&self) -> Pos {
+        let row = self.len().saturating_sub(1) as i32;
+
+        Pos {
+            row,
+            col: self.line_width(row),
+        }
     }
 
     // invariant: caret is at snapped position
@@ -354,6 +382,12 @@ impl From<Vec<Vec<Token>>> for LineData {
 impl From<Vec<Token>> for LineData {
     fn from(line: Vec<Token>) -> Self {
         LineData(vec![line])
+    }
+}
+
+impl From<Vec<char>> for LineData {
+    fn from(chars: Vec<char>) -> Self {
+        LineData(vec![chars.iter().map(|&ch| Token::Char(ch)).collect()])
     }
 }
 

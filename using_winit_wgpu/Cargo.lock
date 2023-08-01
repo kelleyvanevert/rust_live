@@ -976,6 +976,9 @@ checksum = "57bcfdad1b858c2db7c38303a6d2ad4dfaf5eb53dfeb0910128b2c26d6158503"
 [[package]]
 name = "live_editor_state"
 version = "0.1.0"
+dependencies = [
+ "tinyset",
+]
 
 [[package]]
 name = "lock_api"
@@ -1755,6 +1758,15 @@ dependencies = [
  "arrayref",
  "bytemuck",
  "strict-num",
+]
+
+[[package]]
+name = "tinyset"
+version = "0.4.15"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e2417e47ddd3809ad40222777ac754ee881b3a6401e38cbeeeb3ee1ca5f30aa0"
+dependencies = [
+ "rand",
 ]
 
 [[package]]

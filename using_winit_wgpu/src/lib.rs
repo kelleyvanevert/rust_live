@@ -4,7 +4,7 @@ mod highlight;
 mod render;
 mod util;
 
-use live_editor_state::{Direction, EditorState, LineData, Pos, SelectionId, Token};
+use live_editor_state::{Direction, EditorState, LineData, Pos, Token};
 use std::time::{Duration, Instant, SystemTime};
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -50,7 +50,7 @@ run off
         .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley ")),
     );
 
-    let mut is_selecting: Option<SelectionId> = None;
+    let mut is_selecting: Option<usize> = None;
     let mut shift_pressed = false;
     let mut alt_pressed = false;
     let mut meta_or_ctrl_pressed = false;
@@ -90,9 +90,6 @@ run off
                         },
                     ..
                 } => match (logical_key.clone(), state) {
-                    (Key::Escape, ElementState::Pressed) => {
-                        *control_flow = ControlFlow::Exit;
-                    },
                     (Key::Delete, ElementState::Pressed) => {
                         editor_state.clear()
                     },
@@ -103,14 +100,21 @@ run off
                     //         code_section.text.push(end_text);
                     //     }
                     // }
+                    (Key::Tab, ElementState::Pressed) => {
+                        if shift_pressed {
+                            editor_state.untab();
+                        } else {
+                            editor_state.tab();
+                        }
+                    },
                     (Key::Space, ElementState::Pressed) => {
-                        editor_state.type_char(' ');
+                        editor_state.write(" ");
                     }
                     (Key::Enter, ElementState::Pressed) => {
                         if meta_or_ctrl_pressed {
                             apply_shader_pipeline = !apply_shader_pipeline;
                         } else {
-                            editor_state.type_char('\n');
+                            editor_state.write("\n");
                         }
                     }
                     (Key::Backspace, ElementState::Pressed) => {
@@ -129,8 +133,10 @@ run off
                         editor_state.move_caret(Direction::Left, shift_pressed);
                     },
                     (Key::Character(s), ElementState::Pressed) => {
-                        for ch in s.chars() {
-                            editor_state.type_char(ch);
+                        if s.as_str() == "a" && meta_or_ctrl_pressed {
+                            editor_state.select_all();
+                        } else {
+                            editor_state.write(s.as_str());
                         }
                     }
                     (Key::Alt, ElementState::Pressed) => {
@@ -164,7 +170,7 @@ run off
                         meta_or_ctrl_pressed = false;
                     }
                     _ => {
-                        println!("key: {:?}, state: {:?}", logical_key, state);
+                        // println!("key: {:?}, state: {:?}", logical_key, state);
                     }
                 },
                 WindowEvent::MouseInput { state, button, .. } => {

@@ -6,22 +6,9 @@ use super::{
     pos::{Pos, Range},
 };
 
-#[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
-pub struct SelectionId(usize);
-
-impl SelectionId {
-    pub fn start() -> Self {
-        Self(0)
-    }
-
-    pub fn next(&self) -> Self {
-        Self(self.0 + 1)
-    }
-}
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
-    pub id: SelectionId,
+    pub id: usize,
     pub anchor: Option<Pos>,
     pub caret: Pos,
     pub desired_col: Option<i32>,

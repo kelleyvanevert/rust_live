@@ -1,10 +1,10 @@
-use std::collections::HashSet;
+use tinyset::SetUsize;
 
 use super::{
     direction::Direction,
     line_data::{EditResult, LineData},
     pos::{Pos, Range},
-    selection::{Selection, SelectionId},
+    selection::Selection,
 };
 
 pub struct LineSelection {
@@ -15,8 +15,8 @@ pub struct LineSelection {
 
 pub struct EditorState {
     linedata: LineData,
-
-    next_selection_id: SelectionId,
+    pub tab_width: usize,
+    next_selection_id: usize,
     selections: Vec<Selection>,
 }
 
@@ -24,9 +24,15 @@ impl EditorState {
     pub fn new() -> Self {
         EditorState {
             linedata: LineData::new(),
-            next_selection_id: SelectionId::start(),
+            tab_width: 2,
+            next_selection_id: 0,
             selections: vec![],
         }
+    }
+
+    pub fn with_tab_width(mut self, tab_width: usize) -> Self {
+        self.tab_width = tab_width;
+        self
     }
 
     pub fn with_linedata(mut self, linedata: LineData) -> Self {
@@ -37,7 +43,7 @@ impl EditorState {
     /** Ensure that no two selections overlap */
     fn normalize_selections(
         &mut self,
-        selecting_id: Option<SelectionId>,
+        selecting_id: Option<usize>,
         prefer_caret_position: Option<Direction>,
     ) {
         let mut normalized = vec![];
@@ -111,7 +117,7 @@ impl EditorState {
         line_selections
     }
 
-    fn mk_selection(&mut self, caret: Pos) -> (SelectionId, Selection) {
+    fn mk_selection(&mut self, caret: Pos) -> (usize, Selection) {
         debug_assert_eq!(caret, self.linedata.snap(caret));
 
         let id = self.next_selection_id;
@@ -123,12 +129,12 @@ impl EditorState {
             desired_col: None,
         };
 
-        self.next_selection_id = id.next();
+        self.next_selection_id = id + 1;
 
         (id, selection)
     }
 
-    pub fn add_caret(&mut self, pos: Pos) -> SelectionId {
+    pub fn add_caret(&mut self, pos: Pos) -> usize {
         let pos = self.linedata.snap(pos);
         let (id, selection) = self.mk_selection(pos);
 
@@ -138,9 +144,19 @@ impl EditorState {
         id
     }
 
-    pub fn set_single_caret(&mut self, pos: Pos) -> SelectionId {
+    pub fn set_single_caret(&mut self, pos: Pos) -> usize {
         let pos = self.linedata.snap(pos);
         let (id, selection) = self.mk_selection(pos);
+
+        self.selections = vec![selection];
+
+        id
+    }
+
+    pub fn select_all(&mut self) -> usize {
+        let (id, mut selection) = self.mk_selection((0, 0).into());
+        selection.anchor = Some((0, 0).into());
+        selection.caret = self.linedata.end();
 
         self.selections = vec![selection];
 
@@ -151,7 +167,7 @@ impl EditorState {
         self.set_single_caret(pos);
     }
 
-    pub fn drag_select(&mut self, caret: Pos, id: SelectionId) {
+    pub fn drag_select(&mut self, caret: Pos, id: usize) {
         if let Some(s) = self.selections.iter_mut().find(|s| s.id == id) {
             s.move_caret_to(self.linedata.snap(caret), true);
         }
@@ -201,26 +217,100 @@ impl EditorState {
             s.adjust(EditResult::Removal { info });
         }
 
-        self.normalize_selections(None, None)
+        self.normalize_selections(None, None);
     }
 
-    pub fn type_char(&mut self, ch: char) {
-        let mut done: HashSet<SelectionId> = HashSet::new();
-        while let Some(s) = self.selections.iter().find(|s| !done.contains(&s.id)) {
+    pub fn tab(&mut self) {
+        let mut rows_selected = SetUsize::new();
+        let mut regular_tabs = vec![];
+
+        for s in &self.selections {
+            if let Some(range) = s.has_selection() {
+                for i in range.start.row..=range.end.row {
+                    rows_selected.insert(i as usize);
+                }
+            } else {
+                regular_tabs.push(s.id);
+            }
+        }
+
+        for row in rows_selected {
+            if self.linedata.line_empty(row) {
+                continue;
+            }
+
+            let indent = self.linedata.row_indentation(row);
+            let add = ((indent as f32 / self.tab_width as f32).floor() as usize + 1)
+                * self.tab_width
+                - indent;
+
+            self.insert(
+                Pos {
+                    row: row as i32,
+                    col: indent as i32,
+                },
+                (0..add).map(|_| ' ').collect::<Vec<_>>().into(),
+                false,
+            );
+        }
+
+        for id in regular_tabs {
+            if let Some(s) = self.selections.iter().find(|s| s.id == id) {
+                self.insert(
+                    s.caret,
+                    (0..self.tab_width).map(|_| ' ').collect::<Vec<_>>().into(),
+                    false,
+                );
+            }
+        }
+    }
+
+    pub fn untab(&mut self) {
+        let mut rows_selected = SetUsize::new();
+
+        for s in &self.selections {
+            let range = s.range();
+            for i in range.start.row..=range.end.row {
+                rows_selected.insert(i as usize);
+            }
+        }
+
+        for row in rows_selected {
+            let indent = self.linedata.row_indentation(row);
+            let new_indent = ((indent as f32 / self.tab_width as f32).ceil() as usize)
+                .saturating_sub(1)
+                * self.tab_width;
+
+            self.remove(
+                Pos {
+                    row: row as i32,
+                    col: new_indent as i32,
+                },
+                Pos {
+                    row: row as i32,
+                    col: indent as i32,
+                },
+            );
+        }
+    }
+
+    pub fn write(&mut self, text: &str) {
+        let mut done = SetUsize::new();
+        while let Some(s) = self.selections.iter().find(|s| !done.contains(s.id)) {
             done.insert(s.id);
 
             if let Some(Range { start, end }) = s.has_selection() {
                 self.remove(start, end);
-                self.insert(start, LineData::from(ch), false);
+                self.insert(start, LineData::from(text), false);
             } else {
-                self.insert(s.caret, LineData::from(ch), false);
+                self.insert(s.caret, LineData::from(text), false);
             }
         }
     }
 
     pub fn backspace(&mut self) {
-        let mut done: HashSet<SelectionId> = HashSet::new();
-        while let Some(s) = self.selections.iter().find(|s| !done.contains(&s.id)) {
+        let mut done = SetUsize::new();
+        while let Some(s) = self.selections.iter().find(|s| !done.contains(s.id)) {
             done.insert(s.id);
 
             if let Some(Range { start, end }) = s.has_selection() {
