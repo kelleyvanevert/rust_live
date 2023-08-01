@@ -6,7 +6,7 @@ mod render;
 mod util;
 
 use clipboard::Clipboard;
-use live_editor_state::{Direction, EditorState, LineData, Pos, Token};
+use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
 use std::time::{Duration, Instant, SystemTime};
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -127,17 +127,24 @@ run off
                     (Key::Backspace, ElementState::Pressed) => {
                         editor_state.backspace();
                     }
-                    (Key::ArrowUp, ElementState::Pressed) => {
-                        editor_state.move_caret(Direction::Up, shift_pressed);
-                    },
-                    (Key::ArrowRight, ElementState::Pressed) => {
-                        editor_state.move_caret(Direction::Right, shift_pressed);
-                    },
-                    (Key::ArrowDown, ElementState::Pressed) => {
-                        editor_state.move_caret(Direction::Down, shift_pressed);
-                    },
-                    (Key::ArrowLeft, ElementState::Pressed) => {
-                        editor_state.move_caret(Direction::Left, shift_pressed);
+                    (Key::ArrowUp | Key::ArrowRight | Key::ArrowDown | Key::ArrowLeft, ElementState::Pressed) => {
+                        editor_state.move_caret(
+                            match logical_key.clone() {
+                                Key::ArrowUp => Direction::Up,
+                                Key::ArrowRight => Direction::Right,
+                                Key::ArrowDown => Direction::Down,
+                                Key::ArrowLeft => Direction::Left,
+                                _ => unreachable!()
+                            },
+                            shift_pressed,
+                            if alt_pressed {
+                                MoveVariant::ByWord
+                            } else if meta_or_ctrl_pressed {
+                                MoveVariant::UntilEnd
+                            } else {
+                                MoveVariant::ByToken
+                            },
+                        );
                     },
                     (Key::Character(s), ElementState::Pressed) => {
                         if s.as_str() == "c" && meta_or_ctrl_pressed {

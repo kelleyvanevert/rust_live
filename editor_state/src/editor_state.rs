@@ -1,5 +1,7 @@
 use tinyset::SetUsize;
 
+use crate::MoveVariant;
+
 use super::{
     direction::Direction,
     line_data::{EditResult, LineData},
@@ -256,9 +258,10 @@ impl EditorState {
         self.normalize_selections(Some(id), None);
     }
 
-    pub fn move_caret(&mut self, dir: Direction, selecting: bool) {
+    pub fn move_caret(&mut self, dir: Direction, selecting: bool, variant: MoveVariant) {
         for s in &mut self.selections {
-            self.linedata.move_selection_caret(s, dir, selecting);
+            self.linedata
+                .move_selection_caret(s, dir, selecting, variant);
         }
 
         self.normalize_selections(None, Some(dir))
@@ -320,7 +323,7 @@ impl EditorState {
                 continue;
             }
 
-            let indent = self.linedata.row_indentation(row);
+            let indent = self.linedata.line_indent(row);
             let add = ((indent as f32 / self.tab_width as f32).floor() as usize + 1)
                 * self.tab_width
                 - indent;
@@ -359,7 +362,7 @@ impl EditorState {
         }
 
         for row in rows_selected {
-            let indent = self.linedata.row_indentation(row);
+            let indent = self.linedata.line_indent(row);
             let new_indent = ((indent as f32 / self.tab_width as f32).ceil() as usize)
                 .saturating_sub(1)
                 * self.tab_width;
@@ -399,9 +402,12 @@ impl EditorState {
             if let Some(range) = s.has_selection() {
                 self.remove(range);
             } else {
-                let (prev_pos, _) =
-                    self.linedata
-                        .calculate_caret_move(s.caret, None, Direction::Left);
+                let (prev_pos, _) = self.linedata.calculate_caret_move(
+                    s.caret,
+                    None,
+                    Direction::Left,
+                    MoveVariant::ByToken,
+                );
 
                 self.remove(Range {
                     start: prev_pos,

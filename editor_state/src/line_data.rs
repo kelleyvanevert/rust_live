@@ -19,6 +19,13 @@ impl Token {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MoveVariant {
+    ByToken,
+    ByWord,
+    UntilEnd,
+}
+
 /**
     Information about a line data insertion, that can be used for moving selections afterwards.
 
@@ -91,7 +98,7 @@ impl LineData {
         self.0[row as usize].len() == 0
     }
 
-    pub fn row_indentation(&self, row: usize) -> usize {
+    pub fn line_indent(&self, row: usize) -> usize {
         if row >= self.len() {
             return 0;
         }
@@ -125,13 +132,52 @@ impl LineData {
         mut caret: Pos,
         desired_col: Option<i32>,
         dir: Direction,
+        variant: MoveVariant,
     ) -> (Pos, Option<i32>) {
         debug_assert_eq!(caret, self.snap(caret));
 
         let prev_col = caret.col;
 
-        match dir {
-            Direction::Up => {
+        match (variant, dir) {
+            (MoveVariant::UntilEnd, Direction::Up) => {
+                caret = (0, 0).into();
+            }
+            (MoveVariant::UntilEnd, Direction::Down) => {
+                caret = self.end();
+            }
+            (MoveVariant::UntilEnd, Direction::Right) => {
+                caret.col = self.line_width(caret.row);
+            }
+            (MoveVariant::UntilEnd, Direction::Left) => {
+                let indent = self.line_indent(caret.row as usize) as i32;
+                if caret.col == indent {
+                    caret.col = 0;
+                } else {
+                    caret.col = indent;
+                }
+            }
+
+            // TODO implement variant:
+            // - move by word:
+            //    1. possibly skip 1 newline, then skip all leading whitespace
+            //    2a. if [a-zA-Z0-9_], skip until whitespace or punctuation (or start of line)
+            //    2b. if single punctuation, skip until whitespace (or start of line)
+            //    2c. if multiple punctuation, skip until no longer punctuation
+            //
+            (MoveVariant::ByWord, Direction::Up) => {
+                todo!()
+            }
+            (MoveVariant::ByWord, Direction::Down) => {
+                todo!()
+            }
+            (MoveVariant::ByWord, Direction::Right) => {
+                todo!()
+            }
+            (MoveVariant::ByWord, Direction::Left) => {
+                todo!()
+            }
+
+            (MoveVariant::ByToken, Direction::Up) => {
                 if caret.row <= 0 {
                     caret.col = 0;
                 } else {
@@ -139,7 +185,7 @@ impl LineData {
                     caret = self.snap(caret.with_col(desired_col.unwrap_or(caret.col)));
                 }
             }
-            Direction::Down => {
+            (MoveVariant::ByToken, Direction::Down) => {
                 if caret.row >= self.len() as i32 - 1 {
                     caret.col = self.line_width(self.len() as i32 - 1);
                 } else {
@@ -147,7 +193,7 @@ impl LineData {
                     caret = self.snap(caret.with_col(desired_col.unwrap_or(caret.col)));
                 }
             }
-            Direction::Right => {
+            (MoveVariant::ByToken, Direction::Right) => {
                 if caret.col == self.line_width(caret.row) {
                     if caret.row < self.len() as i32 - 1 {
                         caret.row += 1;
@@ -161,7 +207,7 @@ impl LineData {
                     caret.col += cell.width() as i32;
                 }
             }
-            Direction::Left => {
+            (MoveVariant::ByToken, Direction::Left) => {
                 if caret.col == 0 {
                     if caret.row > 0 {
                         caret.row -= 1;
@@ -188,9 +234,15 @@ impl LineData {
     }
 
     // invariant: caret is at snapped position
-    pub fn move_selection_caret(&self, selection: &mut Selection, dir: Direction, selecting: bool) {
+    pub fn move_selection_caret(
+        &self,
+        selection: &mut Selection,
+        dir: Direction,
+        selecting: bool,
+        variant: MoveVariant,
+    ) {
         let (caret, desired_col) =
-            self.calculate_caret_move(selection.caret, selection.desired_col, dir);
+            self.calculate_caret_move(selection.caret, selection.desired_col, dir, variant);
 
         selection.move_caret_to(caret, selecting);
         selection.desired_col = desired_col;
