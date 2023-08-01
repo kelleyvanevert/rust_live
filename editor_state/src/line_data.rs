@@ -1,4 +1,8 @@
-use super::{direction::Direction, pos::Pos, selection::Selection};
+use super::{
+    direction::Direction,
+    pos::{Pos, Range},
+    selection::Selection,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Token {
@@ -49,6 +53,7 @@ pub enum EditResult {
     Removal { info: RemovalInfo },
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LineData(Vec<Vec<Token>>);
 
 impl LineData {
@@ -108,6 +113,10 @@ impl LineData {
             row,
             col: self.line_width(row),
         }
+    }
+
+    pub fn joined(datas: Vec<LineData>) -> LineData {
+        LineData(datas.into_iter().map(|d| d.0).flatten().collect())
     }
 
     // invariant: caret is at snapped position
@@ -276,6 +285,44 @@ impl LineData {
         }
     }
 
+    pub fn copy_range(&self, Range { start, end }: Range) -> LineData {
+        debug_assert_eq!(start, self.snap(start));
+        debug_assert_eq!(end, self.snap(end));
+        debug_assert!(start <= end);
+
+        let i = self.get_index_in_row(start);
+        let j = self.get_index_in_row(end);
+
+        if start.row == end.row {
+            return LineData(vec![self.0[start.row as usize][i..j]
+                .iter()
+                .cloned()
+                .collect::<Vec<_>>()]);
+        } else {
+            let mut lines = vec![];
+
+            lines.push(
+                self.0[start.row as usize][i..]
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+
+            for row in (start.row as usize + 1)..(end.row as usize) {
+                lines.push(self.0[row].iter().cloned().collect::<Vec<_>>());
+            }
+
+            lines.push(
+                self.0[end.row as usize][..j]
+                    .iter()
+                    .cloned()
+                    .collect::<Vec<_>>(),
+            );
+
+            return LineData(lines);
+        }
+    }
+
     /**
         Snaps the given pos to the neasest valid caret position, and returns:
 
@@ -363,6 +410,24 @@ impl LineData {
     }
 }
 
+impl ToString for LineData {
+    fn to_string(&self) -> String {
+        self.0
+            .iter()
+            .map(|line| {
+                line.iter()
+                    .map(|t| match t {
+                        Token::Char(ch) => ch.to_string(),
+                        Token::Widget { .. } => "[WIDGET]".to_string(),
+                    })
+                    .collect::<Vec<_>>()
+                    .join("")
+            })
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+}
+
 impl From<&str> for LineData {
     fn from(str: &str) -> Self {
         LineData(
@@ -370,6 +435,12 @@ impl From<&str> for LineData {
                 .map(|line| line.chars().map(|ch| Token::Char(ch)).collect::<Vec<_>>())
                 .collect(),
         )
+    }
+}
+
+impl From<String> for LineData {
+    fn from(str: String) -> Self {
+        Self::from(str.as_str())
     }
 }
 

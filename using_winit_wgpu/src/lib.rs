@@ -1,9 +1,11 @@
 #![feature(let_chains)]
 
+mod clipboard;
 mod highlight;
 mod render;
 mod util;
 
+use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, Pos, Token};
 use std::time::{Duration, Instant, SystemTime};
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
@@ -59,6 +61,8 @@ run off
     let mut render = pollster::block_on(render::Render::new(&window));
 
     let mut apply_shader_pipeline = true;
+
+    let mut clipboard = Clipboard::new();
 
     // FPS and window updating:
     let mut then = SystemTime::now();
@@ -133,7 +137,18 @@ run off
                         editor_state.move_caret(Direction::Left, shift_pressed);
                     },
                     (Key::Character(s), ElementState::Pressed) => {
-                        if s.as_str() == "a" && meta_or_ctrl_pressed {
+                        if s.as_str() == "c" && meta_or_ctrl_pressed {
+                            // todo improve (ctrl/meta depending on OS)
+                            clipboard.write(editor_state.copy());
+                        } else if s.as_str() == "x" && meta_or_ctrl_pressed {
+                            // todo improve (ctrl/meta depending on OS)
+                            clipboard.write(editor_state.cut());
+                        } else if s.as_str() == "v" && meta_or_ctrl_pressed {
+                            // todo improve (ctrl/meta depending on OS)
+                            if let Some(data) = clipboard.read() {
+                                editor_state.paste(data);
+                            }
+                        } else if s.as_str() == "a" && meta_or_ctrl_pressed {
                             editor_state.select_all();
                         } else {
                             editor_state.write(s.as_str());

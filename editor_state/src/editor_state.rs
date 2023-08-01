@@ -70,6 +70,8 @@ impl EditorState {
             normalized.push(next);
         }
 
+        normalized.sort_by_key(|s| s.caret);
+
         self.selections = normalized;
     }
 
@@ -163,6 +165,61 @@ impl EditorState {
         id
     }
 
+    pub fn copy(&self) -> Vec<LineData> {
+        self.selections
+            .iter()
+            .filter(|s| s.anchor.is_some())
+            .map(|s| self.linedata.copy_range(s.range()))
+            .collect()
+    }
+
+    pub fn cut(&mut self) -> Vec<LineData> {
+        let copied = self.copy();
+
+        self.remove_selections();
+
+        copied
+    }
+
+    pub fn paste(&mut self, mut data: Vec<LineData>) {
+        if data.len() == 0 {
+            return;
+        }
+
+        let num_sources = data.len();
+        let num_targets = self.selections.len();
+
+        if num_sources == num_targets {
+            // easy, done!
+        } else if num_sources == 1 {
+            data = (0..num_targets)
+                .map(|_| data[0].clone())
+                .collect::<Vec<_>>();
+        } else {
+            data = (0..num_targets)
+                .map(|_| LineData::joined(data.clone()))
+                .collect::<Vec<_>>();
+        }
+
+        debug_assert_eq!(data.len(), num_targets);
+
+        let mapping = data
+            .into_iter()
+            .zip(self.selections.iter().map(|s| s.id))
+            .collect::<Vec<_>>();
+
+        for (data, id) in mapping {
+            if let Some(s) = self.selections.iter().find(|s| s.id == id) {
+                if let Some(range) = s.has_selection() {
+                    self.remove(range);
+                    self.insert(range.start, data, false);
+                } else {
+                    self.insert(s.caret, data, false);
+                }
+            }
+        }
+    }
+
     pub fn file_drag_hover(&mut self, pos: Pos) {
         self.set_single_caret(pos);
     }
@@ -200,7 +257,7 @@ impl EditorState {
         }
     }
 
-    pub fn remove(&mut self, start: Pos, end: Pos) {
+    pub fn remove(&mut self, Range { start, end }: Range) {
         self.selections.retain(|s| {
             let contained_entirely = start < s.caret
                 && s.caret < end
@@ -281,16 +338,16 @@ impl EditorState {
                 .saturating_sub(1)
                 * self.tab_width;
 
-            self.remove(
-                Pos {
+            self.remove(Range {
+                start: Pos {
                     row: row as i32,
                     col: new_indent as i32,
                 },
-                Pos {
+                end: Pos {
                     row: row as i32,
                     col: indent as i32,
                 },
-            );
+            });
         }
     }
 
@@ -299,9 +356,9 @@ impl EditorState {
         while let Some(s) = self.selections.iter().find(|s| !done.contains(s.id)) {
             done.insert(s.id);
 
-            if let Some(Range { start, end }) = s.has_selection() {
-                self.remove(start, end);
-                self.insert(start, LineData::from(text), false);
+            if let Some(range) = s.has_selection() {
+                self.remove(range);
+                self.insert(range.start, LineData::from(text), false);
             } else {
                 self.insert(s.caret, LineData::from(text), false);
             }
@@ -313,15 +370,27 @@ impl EditorState {
         while let Some(s) = self.selections.iter().find(|s| !done.contains(s.id)) {
             done.insert(s.id);
 
-            if let Some(Range { start, end }) = s.has_selection() {
-                self.remove(start, end);
+            if let Some(range) = s.has_selection() {
+                self.remove(range);
             } else {
                 let (prev_pos, _) =
                     self.linedata
                         .calculate_caret_move(s.caret, None, Direction::Left);
 
-                self.remove(prev_pos, s.caret);
+                self.remove(Range {
+                    start: prev_pos,
+                    end: s.caret,
+                });
             }
+        }
+    }
+
+    pub fn remove_selections(&mut self) {
+        let mut done = SetUsize::new();
+        while let Some(s) = self.selections.iter().find(|s| !done.contains(s.id)) {
+            done.insert(s.id);
+
+            self.remove(s.range());
         }
     }
 }
