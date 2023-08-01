@@ -1,6 +1,8 @@
 use std::cmp::Ordering;
 
-use super::{line_data::LineData, pos::Pos};
+use crate::line_data::EditResult;
+
+use super::pos::Pos;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {
@@ -11,7 +13,7 @@ pub struct Selection {
 }
 
 impl Selection {
-    pub fn has_selection(&self, lines: &LineData) -> Option<(Pos, Pos)> {
+    pub fn has_selection(&self) -> Option<(Pos, Pos)> {
         self.anchor.and_then(|anchor| {
             if anchor == self.caret {
                 None
@@ -19,6 +21,68 @@ impl Selection {
                 Some(Pos::order(self.caret, anchor))
             }
         })
+    }
+
+    pub fn adjust(&mut self, res: EditResult) {
+        match res {
+            EditResult::Insertion {
+                inserted_at,
+                delta,
+                added_lines,
+            } => {
+                if self.caret >= inserted_at {
+                    if self.caret.row == inserted_at.row {
+                        self.caret = self.caret + delta;
+
+                        // this is very edge-casey, it would probably only occur if something other than user input would result in this insertion ... so maybe we should just remove it?
+                        if let Some(col) = self.desired_col.as_mut() {
+                            *col += delta.col;
+                        }
+                    } else {
+                        self.caret.row += added_lines;
+                    }
+                }
+
+                if let Some(anchor) = self.anchor.as_mut() {
+                    if *anchor >= inserted_at {
+                        if anchor.row == inserted_at.row {
+                            *anchor = *anchor + delta;
+                        } else {
+                            anchor.row += added_lines;
+                        }
+                    }
+                }
+            }
+            EditResult::Removal {
+                start: _,
+                end,
+                delta,
+                removed_lines,
+            } => {
+                if self.caret >= end {
+                    if self.caret.row == end.row {
+                        self.caret = self.caret + delta;
+
+                        // this is very edge-casey, it would probably only occur if something other than user input would result in this removal ... so maybe we should just remove it?
+                        if let Some(col) = self.desired_col.as_mut() {
+                            *col += delta.col;
+                        }
+                    } else {
+                        self.caret.row -= removed_lines;
+                    }
+                }
+
+                if let Some(anchor) = self.anchor.as_mut() {
+                    if *anchor >= end {
+                        if anchor.row == end.row {
+                            *anchor = *anchor + delta;
+                        } else {
+                            anchor.row -= removed_lines;
+                        }
+                    }
+                }
+            }
+        }
     }
 
     pub fn move_caret_to(&mut self, caret: Pos, selecting: bool) {

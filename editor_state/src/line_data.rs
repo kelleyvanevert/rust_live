@@ -15,6 +15,33 @@ impl Cell {
     }
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum EditResult {
+    /**
+        Information about a line data insertion, that can be used for moving selections afterwards.
+
+        - The `delta` should be applied to all carets on the same line and _after_ (or at) the `inserted_at` position
+        - The `added_lines` (which is the same as `delta.row`) should be applied as a row-delta to all subsequent lines
+    */
+    Insertion {
+        inserted_at: Pos,
+        delta: Pos,
+        added_lines: i32,
+    },
+    /**
+        Information about a line data removal, that can be used for moving selections afterwards.
+
+        - The `delta` should be applied to all carets on the same line and _after_ (or at) the `end` position
+        - The `removed_lines` (which is the same as `- delta.row`) should be applied as a (negative) row-delta to all subsequent lines
+    */
+    Removal {
+        start: Pos,
+        end: Pos,
+        delta: Pos,
+        removed_lines: i32,
+    },
+}
+
 pub struct LineData(Vec<Vec<Cell>>);
 
 impl LineData {
@@ -22,16 +49,13 @@ impl LineData {
         LineData(vec![vec![]])
     }
 
-    pub fn from_str(code: &str) -> LineData {
-        LineData(
-            code.split('\n')
-                .map(|line| line.chars().map(|ch| Cell::Char(ch)).collect::<Vec<_>>())
-                .collect(),
-        )
+    pub fn with_widget_at_pos(mut self, pos: Pos, id: usize, width: usize) -> Self {
+        self.insert(pos, Cell::Widget { id, width }.into());
+        self
     }
 
-    pub fn with_widget_at_pos(mut self, pos: Pos, id: usize, width: usize) -> Self {
-        self.insert(pos, vec![Cell::Widget { id, width }]);
+    pub fn with_inserted(mut self, pos: Pos, data: LineData) -> Self {
+        self.insert(pos, data);
         self
     }
 
@@ -52,10 +76,13 @@ impl LineData {
     }
 
     // invariant: caret is at snapped position
-    pub fn move_selection_caret(&self, selection: &mut Selection, dir: Direction, selecting: bool) {
-        let mut caret = selection.caret;
-
-        debug_assert_eq!(caret, self.snap(caret).0);
+    pub fn calculate_caret_move(
+        &self,
+        mut caret: Pos,
+        desired_col: Option<i32>,
+        dir: Direction,
+    ) -> (Pos, Option<i32>) {
+        debug_assert_eq!(caret, self.snap(caret));
 
         let prev_col = caret.col;
 
@@ -65,9 +92,7 @@ impl LineData {
                     caret.col = 0;
                 } else {
                     caret.row -= 1;
-                    caret = self
-                        .snap(caret.with_col(selection.desired_col.unwrap_or(caret.col)))
-                        .0;
+                    caret = self.snap(caret.with_col(desired_col.unwrap_or(caret.col)));
                 }
             }
             Direction::Down => {
@@ -75,9 +100,7 @@ impl LineData {
                     caret.col = self.line_width(self.len() as i32 - 1);
                 } else {
                     caret.row += 1;
-                    caret = self
-                        .snap(caret.with_col(selection.desired_col.unwrap_or(caret.col)))
-                        .0;
+                    caret = self.snap(caret.with_col(desired_col.unwrap_or(caret.col)));
                 }
             }
             Direction::Right => {
@@ -110,34 +133,120 @@ impl LineData {
             }
         }
 
-        selection.move_caret_to(caret, selecting);
+        (
+            caret,
+            if dir == Direction::Up || dir == Direction::Down {
+                desired_col.or(Some(prev_col))
+            } else {
+                None
+            },
+        )
+    }
 
-        if dir == Direction::Up || dir == Direction::Down {
-            selection.desired_col = selection.desired_col.or(Some(prev_col));
-        } else {
-            selection.desired_col = None;
+    // invariant: caret is at snapped position
+    pub fn move_selection_caret(&self, selection: &mut Selection, dir: Direction, selecting: bool) {
+        let (caret, desired_col) =
+            self.calculate_caret_move(selection.caret, selection.desired_col, dir);
+
+        selection.move_caret_to(caret, selecting);
+        selection.desired_col = desired_col;
+    }
+
+    pub fn insert(&mut self, pos: Pos, data: LineData) -> EditResult {
+        debug_assert_eq!(pos, self.snap(pos));
+
+        let data = data.0;
+
+        let i = self.get_index_in_row(pos);
+        let row = pos.row as usize;
+
+        let mut dcol = 0;
+
+        if let Some(first_line) = data.first() {
+            let multiline = data.len() > 1;
+
+            let range = if multiline {
+                i..self.0[row].len()
+            } else {
+                i..i
+            };
+
+            let split_off = self.0[row].splice(range, first_line.clone());
+
+            if !multiline {
+                dcol = first_line.iter().map(|cell| cell.width()).sum::<usize>() as i32;
+            } else {
+                let split_off: Vec<_> = split_off.collect();
+
+                self.0
+                    .splice((row + 1)..(row + 1), data[1..].iter().cloned());
+
+                let last_len = data.last().unwrap().len();
+
+                let last_width = data
+                    .last()
+                    .unwrap()
+                    .iter()
+                    .map(|cell| cell.width())
+                    .sum::<usize>() as i32;
+
+                dcol = last_width - pos.col;
+
+                self.0[row + data.len() - 1].splice(last_len..last_len, split_off);
+            }
+        }
+
+        let drow = (data.len() as i32 - 1).max(0);
+
+        EditResult::Insertion {
+            inserted_at: pos,
+            delta: Pos {
+                col: dcol,
+                row: drow,
+            },
+            added_lines: drow,
         }
     }
 
-    pub fn insert(&mut self, pos: Pos, cells: Vec<Cell>) -> usize {
-        let (Pos { row, .. }, i) = self.snap(pos);
+    pub fn remove(&mut self, start: Pos, end: Pos) -> EditResult {
+        debug_assert_eq!(start, self.snap(start));
+        debug_assert_eq!(end, self.snap(end));
+        debug_assert!(start <= end);
 
-        let inserted_len = cells.iter().map(|cell| cell.width()).sum::<usize>();
+        let i = self.get_index_in_row(start);
+        let j = self.get_index_in_row(end);
 
-        self.0[row as usize].splice(i..i, cells);
+        if start.row == end.row {
+            self.0[start.row as usize].splice(i..j, []);
+        } else {
+            let split_off: Vec<_> = self.0[end.row as usize].splice(j.., []).collect();
+            self.0[start.row as usize].splice(i.., split_off);
+            self.0
+                .splice((start.row as usize + 1)..(end.row as usize + 1), []);
+        }
 
-        inserted_len
+        let removed_lines = end.row - start.row;
+
+        EditResult::Removal {
+            start,
+            end,
+            delta: Pos {
+                row: -removed_lines,
+                col: start.col - end.col,
+            },
+            removed_lines,
+        }
     }
 
     /**
-     Snaps the given pos to the neasest valid caret position, and returns:
+        Snaps the given pos to the neasest valid caret position, and returns:
 
-     - the snapped/nearest valid caret position
-     - the index in that row
-     - the cell at the previous position (which can be `None` if at the start of a line);
-     - the cell at that position (which can be `None` if at the end of a line);
-     - whether the position was inside the text (end of line is valid);
-     - whether the position was valid (i.e. not inside a widget).
+        - the snapped/nearest valid caret position
+        - the index in that row
+        - the cell at the previous position (which can be `None` if at the start of a line);
+        - the cell at that position (which can be `None` if at the end of a line);
+        - whether the position was inside the text (end of line is valid);
+        - whether the position was valid (i.e. not inside a widget).
     */
     pub fn snap_nearest(&self, pos: Pos) -> (Pos, usize, Option<Cell>, Option<Cell>, bool, bool) {
         let empty_line = &vec![];
@@ -207,9 +316,50 @@ impl LineData {
     }
 
     /** Snaps the pos to the nearest available position */
-    pub fn snap(&self, pos: Pos) -> (Pos, usize) {
-        let (pos, i, _, _, _, _) = self.snap_nearest(pos);
-        (pos, i)
+    pub fn snap(&self, pos: Pos) -> Pos {
+        self.snap_nearest(pos).0
+    }
+
+    fn get_index_in_row(&self, pos: Pos) -> usize {
+        self.snap_nearest(pos).1
+    }
+}
+
+impl From<&str> for LineData {
+    fn from(str: &str) -> Self {
+        LineData(
+            str.split('\n')
+                .map(|line| line.chars().map(|ch| Cell::Char(ch)).collect::<Vec<_>>())
+                .collect(),
+        )
+    }
+}
+
+impl From<Vec<Vec<Cell>>> for LineData {
+    fn from(lines: Vec<Vec<Cell>>) -> Self {
+        LineData(lines)
+    }
+}
+
+impl From<Vec<Cell>> for LineData {
+    fn from(line: Vec<Cell>) -> Self {
+        LineData(vec![line])
+    }
+}
+
+impl From<Cell> for LineData {
+    fn from(cell: Cell) -> Self {
+        LineData(vec![vec![cell]])
+    }
+}
+
+impl From<char> for LineData {
+    fn from(ch: char) -> Self {
+        if ch == '\n' {
+            LineData(vec![vec![], vec![]])
+        } else {
+            LineData(vec![vec![Cell::Char(ch)]])
+        }
     }
 }
 

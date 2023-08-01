@@ -25,8 +25,8 @@ pub fn run() {
         .with_titlebar_transparent(true)
         .with_active(true)
         .with_inner_size(Size::Logical(LogicalSize {
-            width: 600.0,
-            height: 400.0,
+            width: 900.0,
+            height: 600.0,
         }))
         .with_resizable(true)
         .build(&event_loop)

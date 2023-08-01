@@ -52,7 +52,7 @@ impl EditorState {
                     filepath: PathBuf::new(),
                 }),
             ],
-            lines: LineData::from_str(
+            lines: LineData::from(
                 "A kelley wrote
   some
   code that' eventually
@@ -64,7 +64,8 @@ run off
 ",
             )
             .with_widget_at_pos(Pos { row: 2, col: 12 }, 0, 5)
-            .with_widget_at_pos(Pos { row: 6, col: 7 }, 1, 4),
+            .with_widget_at_pos(Pos { row: 6, col: 7 }, 1, 4)
+            .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley ")),
             selecting: None,
             next_selection_id: 0,
             selections: vec![],
@@ -89,7 +90,7 @@ run off
         let mut line_selections = vec![];
 
         for s in &self.selections {
-            if let Some((start, end)) = s.has_selection(&self.lines) {
+            if let Some((start, end)) = s.has_selection() {
                 if start.row == end.row {
                     line_selections.push(LineSelection {
                         row: start.row,
@@ -122,11 +123,13 @@ run off
     }
 
     fn mk_selection(&mut self, caret: Pos) -> (usize, Selection) {
+        debug_assert_eq!(caret, self.lines.snap(caret));
+
         let id = self.next_selection_id;
 
         let selection = Selection {
             id,
-            caret: self.lines.snap(caret).0,
+            caret,
             anchor: None,
             desired_col: None,
         };
@@ -137,6 +140,7 @@ run off
     }
 
     pub fn add_caret(&mut self, pos: Pos) {
+        let pos = self.lines.snap(pos);
         let (id, selection) = self.mk_selection(pos);
         self.selecting = Some(id);
 
@@ -144,6 +148,7 @@ run off
     }
 
     pub fn set_single_caret(&mut self, pos: Pos) {
+        let pos = self.lines.snap(pos);
         let (id, selection) = self.mk_selection(pos);
         self.selecting = Some(id);
 
@@ -164,8 +169,9 @@ run off
         self.widgets.push(Box::new(widget));
 
         // add to code & select
+        let pos = self.lines.snap(pos);
         let (_, mut selection) = self.mk_selection(pos);
-        self.lines.insert(pos, vec![Cell::Widget { id, width }]);
+        self.lines.insert(pos, Cell::Widget { id, width }.into());
         self.lines
             .move_selection_caret(&mut selection, Direction::Right, false);
         self.selecting = None;
@@ -175,7 +181,7 @@ run off
 
     pub fn drag_select(&mut self, caret: Pos) {
         if let Some(id) = self.selecting && let Some(s) = self.selections.iter_mut().find(|s| s.id == id) {
-            s.move_caret_to(self.lines.snap(caret).0, true);
+            s.move_caret_to(self.lines.snap(caret), true);
         }
     }
 
@@ -189,153 +195,49 @@ run off
         self.lines = LineData::new()
     }
 
-    pub fn type_char(&mut self, ch: char) {
-        // // first, normalize selections:
-        // // - no "visual but not logical" caret positions
-        // // - type at start of selections, whether that's the caret or the anchor
-        // for s in &mut self.selections {
-        //     s.caret = s.caret.text_bounded(&self.lines);
-        //     if let Some(anchor) = s.anchor {
-        //         if anchor.row < s.caret.row {
-        //             s.caret = anchor;
-        //         } else if anchor.col < s.caret.col {
-        //             s.caret = anchor;
-        //         }
-        //     }
-        //     s.anchor = None;
-        // }
+    pub fn insert(&mut self, pos: Pos, data: LineData) {
+        let pos = self.lines.snap(pos);
+        let res = self.lines.insert(pos, data);
 
-        // for i in 0..self.selections.len() {
-        //     self.type_char_at_selection(i, ch);
-        // }
+        for s in &mut self.selections {
+            s.adjust(res);
+        }
     }
 
-    fn type_char_at_selection(&mut self, i: usize, ch: char) {
-        // debug_assert!(i < self.selections.len());
-        // let Pos { row, col } = self.selections[i].caret;
+    pub fn remove(&mut self, start: Pos, end: Pos) {
+        let res = self.lines.remove(start, end);
 
-        // debug_assert!(row >= 0 && row < self.lines.len() as i32);
+        for s in &mut self.selections {
+            s.adjust(res);
+            // TODO remove selections that should no longer exist
+        }
+    }
 
-        // if ch != '\n' {
-        //     // TODO: remove selection first, if there is one
-
-        //     // the easy case
-        //     let line = &mut self.lines[row as usize];
-        //     debug_assert!(col >= 0 && col < line.len() as i32);
-
-        //     line.insert(col as usize, ch);
-        //     self.selections[i].caret.col += 1;
-        // } else {
-        //     // the harder case
-        //     let after = self.lines[row as usize].split_off(col as usize);
-        //     self.lines.insert(row as usize + 1, after);
-
-        //     for s in &mut self.selections {
-        //         if s.caret.row == row && s.caret.col == col {
-        //             s.caret.row += 1;
-        //             s.caret.col = 0;
-        //         } else if s.caret.row == row && s.caret.col > col {
-        //             s.caret.row += 1;
-        //             s.caret.col -= col;
-        //         } else if s.caret.row > row {
-        //             s.caret.row += 1;
-        //         }
-        //     }
-        // }
+    pub fn type_char(&mut self, ch: char) {
+        for i in 0..self.selections.len() {
+            if let Some((start, end)) = self.selections[i].has_selection() {
+                self.remove(start, end);
+                self.insert(start, LineData::from(ch));
+            } else {
+                self.insert(self.selections[i].caret, LineData::from(ch));
+            }
+        }
     }
 
     pub fn backspace(&mut self) {
-        // // first, normalize selections:
-        // // - no "visual but not logical" caret positions
-        // for s in &mut self.selections {
-        //     s.caret = s.caret.text_bounded(&self.lines);
-        // }
+        for i in 0..self.selections.len() {
+            if let Some((start, end)) = self.selections[i].has_selection() {
+                self.remove(start, end);
+            } else {
+                let (prev_pos, _) = self.lines.calculate_caret_move(
+                    self.selections[i].caret,
+                    None,
+                    Direction::Left,
+                );
 
-        // for i in 0..self.selections.len() {
-        //     self.backspace_at_selection(i);
-        // }
-
-        // // TODO: normalize selections for no-overlap invariant
-    }
-
-    fn backspace_at_selection(&mut self, i: usize) {
-        // debug_assert!(i < self.selections.len());
-
-        // let Selection { anchor, caret, .. } = self.selections[i];
-        // let Pos { row, col } = caret;
-
-        // debug_assert!(row >= 0 && row < self.lines.len() as i32);
-
-        // if let Some(anchor) = anchor && anchor != caret {
-        //     let (first, last) = Pos::order(anchor, caret);
-        //     self.remove_selection(first, last);
-        // } else if col > 0 {
-        //     // remove a single character (the easy case)
-        //     // [x] DONE
-
-        //     self.lines[row as usize].remove(col as usize - 1);
-        //     for s in &mut self.selections {
-        //         // move back self + others in same line
-        //         if s.caret.row == row && s.caret.col >= col {
-        //             s.caret.col -= 1;
-        //         }
-        //         if let Some(anchor) = s.anchor.as_mut() && anchor.row == row && anchor.col >= col {
-        //             anchor.col -= 1;
-        //         }
-        //     }
-        // } else if row > 0 {
-        //     // remove a newline (the slightly harder case)
-        //     // [x] DONE
-
-        //     let mut removed_line = self.lines.remove(row as usize);
-        //     let prev_line_len = self.lines.line_width(row - 1);
-        //     self.lines[row as usize - 1].append(&mut removed_line);
-        //     for s in &mut self.selections {
-        //         // move back self + others in same line
-        //         if s.caret.row >= row {
-        //             if s.caret.row == row {
-        //                 s.caret.col += prev_line_len;
-        //             }
-        //             s.caret.row -= 1;
-        //         }
-        //         if let Some(anchor) = s.anchor.as_mut() && anchor.row >= row {
-        //             if anchor.row == row {
-        //                 anchor.col += prev_line_len;
-        //             }
-        //             anchor.row -= 1;
-        //         }
-        //     }
-        // } else {
-        //     // noop
-        // }
-    }
-
-    fn remove_selection(&mut self, start: Pos, end: Pos) {
-        // // remove a selection (the hardest case)
-        // // self.selections[i] = Selection::from(first);
-
-        // if start.row == end.row {
-        //     self.lines[start.row as usize].splice((start.col as usize)..(end.col as usize + 1), []);
-        // } else {
-        //     let removed_from_end = self.lines[end.row as usize]
-        //         .splice((end.col as usize).., [])
-        //         .collect::<Vec<_>>();
-        //     self.lines[start.row as usize].splice((start.col as usize).., removed_from_end);
-        //     self.lines
-        //         .splice((start.row as usize + 1)..(end.row as usize + 1), []);
-        // }
-
-        // for s in &mut self.selections {
-        //     // TODO fix?
-        //     if s.caret.within(start, end) {
-        //         s.caret = start;
-        //     }
-        //     if let Some(anchor) = s.anchor.as_mut() && anchor.within(start, end) {
-        //         *anchor = start;
-        //     }
-        // }
-
-        // // TODO normalize selections
+                self.remove(prev_pos, self.selections[i].caret);
+            }
+        }
     }
 
     pub fn tokenize(&self) -> Vec<(usize, Vec<Token>)> {
