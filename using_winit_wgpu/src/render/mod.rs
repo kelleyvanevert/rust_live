@@ -1,8 +1,8 @@
 mod buffer;
 
 use self::buffer::{QuadBufferBuilder, Vertex};
-use crate::state::{pos::Pos, EditorState, LineSelection, Token};
 use cgmath::SquareMatrix;
+use live_editor_state::{pos::Pos, EditorState, LineSelection, Token};
 use wgpu::util::DeviceExt;
 use wgpu_text::{
     glyph_brush::{

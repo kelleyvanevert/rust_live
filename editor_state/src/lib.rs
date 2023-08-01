@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 pub mod direction;
 pub mod line_data;
 pub mod pos;

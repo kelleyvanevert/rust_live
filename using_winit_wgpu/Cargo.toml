@@ -12,5 +12,6 @@ wgpu = "0.17.0"
 wgpu_text = "0.8.3"
 cgmath = "0.18"
 bytemuck = { version = "1.12", features = ["derive"] }
+live_editor_state = { path = "../editor_state" }
 winit = { path = "../winit" }
 # this is the latest winit + self-patched version of [https://github.com/amrbashir/winit/tree/dnd-cursor-location]

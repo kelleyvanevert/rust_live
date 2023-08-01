@@ -1,11 +1,9 @@
 #![feature(let_chains)]
 
 mod render;
-mod state;
 mod util;
 
-use state::direction::Direction;
-use state::EditorState;
+use live_editor_state::{direction::Direction, EditorState};
 use std::time::{Duration, Instant, SystemTime};
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -39,6 +37,7 @@ pub fn run() {
     let mut is_selecting = false;
     let mut shift_pressed = false;
     let mut alt_pressed = false;
+    let mut meta_or_ctrl_pressed = false;
     let mut mouse_at: Option<(f32, f32)> = None;
 
     let mut render = pollster::block_on(render::Render::new(&window));
@@ -74,10 +73,9 @@ pub fn run() {
                             ..
                         },
                     ..
-                } => match (logical_key, state) {
+                } => match (logical_key.clone(), state) {
                     (Key::Escape, ElementState::Pressed) => {
-                        //*control_flow = ControlFlow::Exit;
-                        apply_shader_pipeline = !apply_shader_pipeline;
+                        *control_flow = ControlFlow::Exit;
                     },
                     (Key::Delete, ElementState::Pressed) => {
                         editor_state.clear()
@@ -93,7 +91,11 @@ pub fn run() {
                         editor_state.type_char(' ');
                     }
                     (Key::Enter, ElementState::Pressed) => {
-                        editor_state.type_char('\n');
+                        if meta_or_ctrl_pressed {
+                            apply_shader_pipeline = !apply_shader_pipeline;
+                        } else {
+                            editor_state.type_char('\n');
+                        }
                     }
                     (Key::Backspace, ElementState::Pressed) => {
                         editor_state.backspace();
@@ -127,7 +129,27 @@ pub fn run() {
                     (Key::Shift, ElementState::Released) => {
                         shift_pressed = false;
                     }
-                    _ => {}
+                    (Key::Meta, ElementState::Pressed) => {
+                        meta_or_ctrl_pressed = true;
+                    }
+                    (Key::Meta, ElementState::Released) => {
+                        meta_or_ctrl_pressed = false;
+                    }
+                    (Key::Super, ElementState::Pressed) => {
+                        meta_or_ctrl_pressed = true;
+                    }
+                    (Key::Super, ElementState::Released) => {
+                        meta_or_ctrl_pressed = false;
+                    }
+                    (Key::Control, ElementState::Pressed) => {
+                        meta_or_ctrl_pressed = true;
+                    }
+                    (Key::Control, ElementState::Released) => {
+                        meta_or_ctrl_pressed = false;
+                    }
+                    _ => {
+                        println!("key: {:?}, state: {:?}", logical_key, state);
+                    }
                 },
                 WindowEvent::MouseInput { state, button, .. } => {
                     if let Some(p) = mouse_at && state == ElementState::Pressed && button == MouseButton::Left {
