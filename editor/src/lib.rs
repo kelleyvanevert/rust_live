@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(slice_group_by)]
 
 mod clipboard;
 mod highlight;
