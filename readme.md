@@ -22,7 +22,6 @@ Instead of going there the most pragmatic way (i.e. making a web app, using web 
 - Editor logic
 
   - [ ] Cmd+D to select next occurrece (if 1 selection)
-  - [ ] move by word
   - [ ] double click selects word
 
 - Widgets
