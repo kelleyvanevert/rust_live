@@ -1,4 +1,5 @@
 mod buffer;
+mod pass;
 mod widget_vertex;
 
 use crate::highlight::{syntax_highlight, CodeToken};

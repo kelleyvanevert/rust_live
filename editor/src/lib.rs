@@ -4,10 +4,15 @@ mod clipboard;
 mod highlight;
 mod render;
 mod util;
+mod widget;
+mod widgets;
 
 use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
+use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
+use widget::Widget;
+use widgets::sample::SampleWidget;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
 use winit::platform::macos::WindowBuilderExtMacOS;
@@ -35,9 +40,11 @@ pub fn run() {
         .build(&event_loop)
         .unwrap();
 
-    let mut editor_state = EditorState::new().with_linedata(
-        LineData::from(
-            "A kelley wrote
+    let sample_widget_0 = SampleWidget::new(PathBuf::from("12345"));
+    let sample_widget_1 = SampleWidget::new(PathBuf::from("1234"));
+
+    let linedata = LineData::from(
+        "A kelley wrote
   some
   code that' eventually
   and bla bla bla bla bla
@@ -46,11 +53,15 @@ run off
   the screen
   and bla bla bla
 ",
-        )
-        .with_widget_at_pos(Pos { row: 2, col: 12 }, 0, 5)
-        .with_widget_at_pos(Pos { row: 6, col: 7 }, 1, 4)
-        .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley ")),
-    );
+    )
+    .with_widget_at_pos(Pos { row: 2, col: 12 }, 0, sample_widget_0.column_width())
+    .with_widget_at_pos(Pos { row: 6, col: 7 }, 1, sample_widget_1.column_width())
+    .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley "));
+
+    let mut widgets: Vec<Box<dyn Widget>> =
+        vec![Box::new(sample_widget_0), Box::new(sample_widget_1)];
+
+    let mut editor_state = EditorState::new().with_linedata(linedata);
 
     let mut is_selecting: Option<usize> = None;
     let mut shift_pressed = false;
@@ -255,11 +266,21 @@ run off
 
                     editor_state.file_drag_hover(pos);
                 }
-                WindowEvent::DragDrop { paths, position } => {
+                WindowEvent::DragDrop { mut paths, position } => {
+                    let Some(filepath) = paths.pop() else {
+                        return;
+                    };
+
                     let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
                     let pos = render.px_to_pos((position.x as f32, position.y as f32));
 
                     editor_state.insert(pos, Token::Widget { id: 0, width: 5 }.into(), true);
+                    let widget = SampleWidget::new(filepath);
+                    let id = widgets.len();
+                    let width = widget.column_width();
+                    widgets.push(Box::new(widget));
+
+                    editor_state.insert(pos, Token::Widget { id, width }.into(), true);
                 }
                 _ => (),
             },
@@ -292,7 +313,3 @@ run off
         }
     });
 }
-
-// fn lerp(v: f32, domain: (f32, f32), range: (f32, f32)) -> f32 {
-//     (v - domain.0) * (range.1 - range.0) / (domain.1 - domain.0)
-// }
