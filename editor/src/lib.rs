@@ -125,7 +125,13 @@ run off
                         }
                     }
                     (Key::Backspace, ElementState::Pressed) => {
-                        editor_state.backspace();
+                        editor_state.backspace(if alt_pressed {
+                            MoveVariant::ByWord
+                        } else if meta_or_ctrl_pressed {
+                            MoveVariant::UntilEnd
+                        } else {
+                            MoveVariant::ByToken
+                        });
                     }
                     (Key::ArrowUp | Key::ArrowRight | Key::ArrowDown | Key::ArrowLeft, ElementState::Pressed) => {
                         editor_state.move_caret(

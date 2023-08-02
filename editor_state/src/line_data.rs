@@ -1,8 +1,6 @@
-use super::{
-    direction::Direction,
-    pos::{Pos, Range},
-    selection::Selection,
-};
+use debug_unreachable::debug_unreachable;
+
+use crate::{Direction, Pos, Range, Selection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Token {
@@ -16,6 +14,31 @@ impl Token {
             Token::Char(_) => 1,
             Token::Widget { width, .. } => *width,
         }
+    }
+
+    pub fn is_widget(&self) -> bool {
+        match self {
+            Token::Widget { .. } => true,
+            Token::Char(_) => false,
+        }
+    }
+
+    pub fn is_whitespace(&self) -> bool {
+        match self {
+            Token::Widget { .. } => false,
+            Token::Char(ch) => *ch == ' ',
+        }
+    }
+
+    pub fn is_part_of_word(&self) -> bool {
+        match self {
+            Token::Widget { .. } => false,
+            Token::Char(ch) => ch.is_alphanumeric() || *ch == '_',
+        }
+    }
+
+    pub fn is_punct(&self) -> bool {
+        !self.is_part_of_word() && !self.is_whitespace() && !self.is_widget()
     }
 }
 
@@ -136,6 +159,8 @@ impl LineData {
     ) -> (Pos, Option<i32>) {
         debug_assert_eq!(caret, self.snap(caret));
 
+        // used to set `desired_col` if moving vertically,
+        //  after calculating new caret position
         let prev_col = caret.col;
 
         match (variant, dir) {
@@ -157,27 +182,98 @@ impl LineData {
                 }
             }
 
-            // TODO implement variant:
-            // - move by word:
-            //    1. possibly skip 1 newline, then skip all leading whitespace
-            //    2a. if [a-zA-Z0-9_], skip until whitespace or punctuation (or start of line)
-            //    2b. if single punctuation, skip until whitespace (or start of line)
-            //    2c. if multiple punctuation, skip until no longer punctuation
-            //
-            (MoveVariant::ByWord, Direction::Up) => {
-                todo!()
-            }
-            (MoveVariant::ByWord, Direction::Down) => {
-                todo!()
-            }
-            (MoveVariant::ByWord, Direction::Right) => {
-                todo!()
-            }
-            (MoveVariant::ByWord, Direction::Left) => {
-                todo!()
+            (MoveVariant::ByWord, Direction::Left | Direction::Right) => 'done: {
+                let delta = if dir == Direction::Left { -1 } else { 1 };
+
+                let mut i = self.snap_indices(caret).1 as i32;
+                let get = |row: i32, i: i32| {
+                    if dir == Direction::Left {
+                        if i == 0 {
+                            None
+                        } else {
+                            self.0[row as usize].get(i as usize - 1)
+                        }
+                    } else {
+                        self.0[row as usize].get(i as usize)
+                    }
+                };
+
+                // possibly skip 1 leading newline
+                if get(caret.row, i) == None {
+                    if dir == Direction::Left {
+                        if caret.row == 0 {
+                            caret.col = 0;
+                            break 'done;
+                        }
+
+                        caret.row += delta;
+                        caret.col = self.line_width(caret.row);
+                        i = self.0[caret.row as usize].len() as i32;
+                    } else {
+                        if caret.row >= self.len() as i32 - 1 {
+                            caret.col = self.line_width(self.len() as i32 - 1);
+                            break 'done;
+                        }
+
+                        caret.row += delta;
+                        caret.col = 0;
+                        i = 0;
+                    }
+                }
+
+                // skip all leading (non-newline) whitespace
+                while let Some(t) = get(caret.row, i) && t.is_whitespace() {
+                    caret.col += t.width() as i32 * delta;
+                    i += delta;
+                }
+
+                match get(caret.row, i) {
+                    None => {
+                        // if at start or end of line -> we're done
+                    }
+                    Some(t) if t.is_widget() => {
+                        // skip over single widget
+                        caret.col += t.width() as i32 * delta;
+                    }
+                    Some(t) if t.is_part_of_word() => {
+                        // skip over entire word
+                        while let Some(t) = get(caret.row, i) && t.is_part_of_word() {
+                            caret.col += t.width() as i32 * delta;
+                            i += delta;
+                        }
+                    }
+                    Some(t) if t.is_punct() => {
+                        // if we're at a punctuation mark, skip over the next word or widget, or a sequence of punctuation marks, but stop at whitespace
+
+                        caret.col += t.width() as i32 * delta;
+                        i += delta;
+
+                        match get(caret.row, i) {
+                            Some(t) if t.is_widget() => {
+                                caret.col += t.width() as i32 * delta;
+                            }
+                            Some(t) if t.is_part_of_word() => {
+                                while let Some(t) = get(caret.row, i) && t.is_part_of_word() {
+                                    caret.col += t.width() as i32 * delta;
+                                    i += delta;
+                                }
+                            }
+                            Some(t) if t.is_punct() => {
+                                while let Some(t) = get(caret.row, i) && t.is_punct() {
+                                    caret.col += t.width() as i32 * delta;
+                                    i += delta;
+                                }
+                            }
+                            _ => {
+                                // we're done
+                            }
+                        }
+                    }
+                    _ => unsafe { debug_unreachable!() },
+                }
             }
 
-            (MoveVariant::ByToken, Direction::Up) => {
+            (_, Direction::Up) => {
                 if caret.row <= 0 {
                     caret.col = 0;
                 } else {
@@ -185,7 +281,7 @@ impl LineData {
                     caret = self.snap(caret.with_col(desired_col.unwrap_or(caret.col)));
                 }
             }
-            (MoveVariant::ByToken, Direction::Down) => {
+            (_, Direction::Down) => {
                 if caret.row >= self.len() as i32 - 1 {
                     caret.col = self.line_width(self.len() as i32 - 1);
                 } else {
@@ -253,29 +349,23 @@ impl LineData {
 
         let data = data.0;
 
-        let i = self.get_index_in_row(pos);
-        let row = pos.row as usize;
+        let (r, i) = self.snap_indices(pos);
 
         let mut dcol = 0;
 
         if let Some(first_line) = data.first() {
             let multiline = data.len() > 1;
 
-            let range = if multiline {
-                i..self.0[row].len()
-            } else {
-                i..i
-            };
+            let range = if multiline { i..self.0[r].len() } else { i..i };
 
-            let split_off = self.0[row].splice(range, first_line.clone());
+            let split_off = self.0[r].splice(range, first_line.clone());
 
             if !multiline {
                 dcol = first_line.iter().map(|cell| cell.width()).sum::<usize>() as i32;
             } else {
                 let split_off: Vec<_> = split_off.collect();
 
-                self.0
-                    .splice((row + 1)..(row + 1), data[1..].iter().cloned());
+                self.0.splice((r + 1)..(r + 1), data[1..].iter().cloned());
 
                 let last_len = data.last().unwrap().len();
 
@@ -288,7 +378,7 @@ impl LineData {
 
                 dcol = last_width - pos.col;
 
-                self.0[row + data.len() - 1].splice(last_len..last_len, split_off);
+                self.0[r + data.len() - 1].splice(last_len..last_len, split_off);
             }
         }
 
@@ -312,16 +402,15 @@ impl LineData {
         debug_assert_eq!(end, self.snap(end));
         debug_assert!(start <= end);
 
-        let i = self.get_index_in_row(start);
-        let j = self.get_index_in_row(end);
+        let (r_start, i) = self.snap_indices(start);
+        let (r_end, j) = self.snap_indices(end);
 
         if start.row == end.row {
-            self.0[start.row as usize].splice(i..j, []);
+            self.0[r_start].splice(i..j, []);
         } else {
-            let split_off: Vec<_> = self.0[end.row as usize].splice(j.., []).collect();
-            self.0[start.row as usize].splice(i.., split_off);
-            self.0
-                .splice((start.row as usize + 1)..(end.row as usize + 1), []);
+            let split_off: Vec<_> = self.0[r_end].splice(j.., []).collect();
+            self.0[r_start].splice(i.., split_off);
+            self.0.splice((r_start + 1)..(r_end + 1), []);
         }
 
         let removed_lines = end.row - start.row;
@@ -342,34 +431,24 @@ impl LineData {
         debug_assert_eq!(end, self.snap(end));
         debug_assert!(start <= end);
 
-        let i = self.get_index_in_row(start);
-        let j = self.get_index_in_row(end);
+        let (r_start, i) = self.snap_indices(start);
+        let (r_end, j) = self.snap_indices(end);
 
         if start.row == end.row {
-            return LineData(vec![self.0[start.row as usize][i..j]
+            return LineData(vec![self.0[r_start][i..j]
                 .iter()
                 .cloned()
                 .collect::<Vec<_>>()]);
         } else {
             let mut lines = vec![];
 
-            lines.push(
-                self.0[start.row as usize][i..]
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
+            lines.push(self.0[r_start][i..].iter().cloned().collect::<Vec<_>>());
 
-            for row in (start.row as usize + 1)..(end.row as usize) {
+            for row in (r_start + 1)..(r_end) {
                 lines.push(self.0[row].iter().cloned().collect::<Vec<_>>());
             }
 
-            lines.push(
-                self.0[end.row as usize][..j]
-                    .iter()
-                    .cloned()
-                    .collect::<Vec<_>>(),
-            );
+            lines.push(self.0[r_end][..j].iter().cloned().collect::<Vec<_>>());
 
             return LineData(lines);
         }
@@ -457,8 +536,8 @@ impl LineData {
         self.snap_nearest(pos).0
     }
 
-    fn get_index_in_row(&self, pos: Pos) -> usize {
-        self.snap_nearest(pos).1
+    fn snap_indices(&self, pos: Pos) -> (usize, usize) {
+        (pos.row as usize, self.snap_nearest(pos).1)
     }
 }
 

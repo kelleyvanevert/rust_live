@@ -4,4 +4,5 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+new_debug_unreachable = "1.0"
 tinyset = "0.4.15"

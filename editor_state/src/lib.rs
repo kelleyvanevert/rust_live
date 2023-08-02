@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(if_let_guard)]
 
 mod direction;
 mod editor_state;

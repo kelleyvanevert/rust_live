@@ -1,10 +1,6 @@
 use std::cmp::Ordering;
 
-use super::{
-    direction::Direction,
-    line_data::{EditResult, InsertionInfo, RemovalInfo},
-    pos::{Pos, Range},
-};
+use crate::{Direction, EditResult, InsertionInfo, Pos, Range, RemovalInfo};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Selection {

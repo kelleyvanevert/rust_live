@@ -1,13 +1,6 @@
 use tinyset::SetUsize;
 
-use crate::MoveVariant;
-
-use super::{
-    direction::Direction,
-    line_data::{EditResult, LineData},
-    pos::{Pos, Range},
-    selection::Selection,
-};
+use crate::{selection::Selection, Direction, EditResult, LineData, MoveVariant, Pos, Range};
 
 pub struct LineSelection {
     pub row: i32,
@@ -394,7 +387,7 @@ impl EditorState {
         }
     }
 
-    pub fn backspace(&mut self) {
+    pub fn backspace(&mut self, variant: MoveVariant) {
         let mut done = SetUsize::new();
         while let Some(s) = self.selections.iter().find(|s| !done.contains(s.id)) {
             done.insert(s.id);
@@ -406,7 +399,12 @@ impl EditorState {
                     s.caret,
                     None,
                     Direction::Left,
-                    MoveVariant::ByToken,
+                    if variant == MoveVariant::UntilEnd && s.caret.col == 0 {
+                        // a little edge-case ;)
+                        MoveVariant::ByToken
+                    } else {
+                        variant
+                    },
                 );
 
                 self.remove(Range {

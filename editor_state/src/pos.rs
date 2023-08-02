@@ -1,6 +1,6 @@
 use std::cmp::Ordering;
 
-use super::direction::Direction;
+use crate::Direction;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Pos {
