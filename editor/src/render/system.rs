@@ -100,6 +100,14 @@ impl SystemData {
         }
     }
 
+    pub fn px_to_pos_f(&self, (x, y): (f32, f32)) -> Pos<f32> {
+        let sf = self.scale_factor;
+        Pos {
+            row: ((y * sf - 260.0) / self.char_size.1),
+            col: ((x * sf - 100.0) / self.char_size.0),
+        }
+    }
+
     pub fn resize(&mut self, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration) {
         self.system_uniform.update(
             self.scale_factor,

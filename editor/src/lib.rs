@@ -11,7 +11,7 @@ use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
 use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
-use widget::Widget;
+use widget::{Widget, WidgetManager};
 use widgets::sample::SampleWidget;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -40,8 +40,10 @@ pub fn run() {
         .build(&event_loop)
         .unwrap();
 
-    let sample_widget_0 = SampleWidget::new(PathBuf::from("12345"));
-    let sample_widget_1 = SampleWidget::new(PathBuf::from("1234"));
+    let mut widget_manager = WidgetManager::new();
+
+    let id_0 = widget_manager.add(Box::new(SampleWidget::new(PathBuf::from("12345"))));
+    let id_1 = widget_manager.add(Box::new(SampleWidget::new(PathBuf::from("1234"))));
 
     let linedata = LineData::from(
         "A kelley wrote
@@ -54,12 +56,17 @@ run off
   and bla bla bla
 ",
     )
-    .with_widget_at_pos(Pos { row: 2, col: 12 }, 0, sample_widget_0.column_width())
-    .with_widget_at_pos(Pos { row: 6, col: 7 }, 1, sample_widget_1.column_width())
+    .with_widget_at_pos(
+        Pos { row: 2, col: 12 },
+        0,
+        widget_manager.get_column_width(id_0).unwrap(),
+    )
+    .with_widget_at_pos(
+        Pos { row: 6, col: 7 },
+        1,
+        widget_manager.get_column_width(id_1).unwrap(),
+    )
     .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley "));
-
-    let mut widgets: Vec<Box<dyn Widget>> =
-        vec![Box::new(sample_widget_0), Box::new(sample_widget_1)];
 
     let mut editor_state = EditorState::new().with_linedata(linedata);
 
@@ -68,6 +75,7 @@ run off
     let mut alt_pressed = false;
     let mut meta_or_ctrl_pressed = false;
     let mut mouse_at: Option<(f32, f32)> = None;
+    let mut hovering_widget_id: Option<usize> = None;
 
     let mut render = pollster::block_on(render::Renderer::new(&window));
 
@@ -240,6 +248,22 @@ run off
                     let p = (position.x as f32, position.y as f32);
                     mouse_at = Some(p);
 
+                    {
+                        let w = if is_selecting.is_some() {
+                            // don't run widget hover effects when selecting
+                            None
+                        } else {
+                            editor_state.find_widget_at(render.system.px_to_pos_f(p))
+                        };
+                        if let Some(id) = hovering_widget_id && w != hovering_widget_id {
+                            widget_manager.unhover(id);
+                        }
+                        if let Some(id) = w {
+                            widget_manager.hover(id);
+                        }
+                        hovering_widget_id = w;
+                    }
+
                     if let Some(id) = is_selecting {
                         let caret = render.system.px_to_pos(p);
                         editor_state.drag_select(caret, id);
@@ -268,18 +292,16 @@ run off
                     let position: LogicalPosition<f32> = position.to_logical(render.system.scale_factor.into());
                     let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
-                    editor_state.insert(pos, Token::Widget { id: 0, width: 5 }.into(), true);
                     let widget = SampleWidget::new(filepath);
-                    let id = widgets.len();
                     let width = widget.column_width();
-                    widgets.push(Box::new(widget));
+                    let id = widget_manager.add(Box::new(widget));
 
                     editor_state.insert(pos, Token::Widget { id, width }.into(), true);
                 }
                 _ => (),
             },
             winit::event::Event::RedrawRequested(_) => {
-                render.draw(&editor_state);
+                render.draw(&editor_state, &  widget_manager);
                 // if state.game_state != state::GameState::Quiting {
                 window.request_redraw();
                 // }

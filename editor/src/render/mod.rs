@@ -7,6 +7,8 @@ mod system;
 mod widget_vertex;
 mod widgets_pass;
 
+use crate::widget::WidgetManager;
+
 use self::{
     background_pass::BackgroundPass, code_pass::CodePass, selections_pass::SelectionsPass,
     system::SystemData, widgets_pass::WidgetsPass,
@@ -115,7 +117,7 @@ impl<'a> Renderer<'a> {
         self.selections_pass.resize(&self.queue, &self.config);
     }
 
-    pub fn draw(&mut self, editor_state: &EditorState) {
+    pub fn draw(&mut self, editor_state: &EditorState, widget_manager: &WidgetManager) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
@@ -144,6 +146,7 @@ impl<'a> Renderer<'a> {
             &self.system,
             &view,
             widget_instances,
+            widget_manager,
             &mut encoder,
         );
 

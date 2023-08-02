@@ -2,10 +2,10 @@ use std::cmp::Ordering;
 
 use crate::Direction;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct Pos {
-    pub row: i32,
-    pub col: i32,
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Pos<T = i32> {
+    pub row: T,
+    pub col: T,
 }
 
 impl Pos {
@@ -67,7 +67,9 @@ impl PartialOrd for Pos {
     }
 }
 
-impl Ord for Pos {
+impl Eq for Pos<i32> {}
+
+impl Ord for Pos<i32> {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
         match self.row.cmp(&other.row) {
             Ordering::Less => Ordering::Less,

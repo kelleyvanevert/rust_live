@@ -1,3 +1,5 @@
+use crate::widget::WidgetManager;
+
 use super::{
     system::SystemData,
     widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex},
@@ -209,6 +211,7 @@ impl WidgetsPass {
         system: &SystemData,
         view: &TextureView,
         widget_instances: Vec<(usize, (f32, f32, f32, f32))>,
+        widget_manager: &WidgetManager,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         let mut widgets_builder = WidgetQuadBufferBuilder::new();

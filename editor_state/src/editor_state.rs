@@ -1,6 +1,8 @@
 use tinyset::SetUsize;
 
-use crate::{selection::Selection, Direction, EditResult, LineData, MoveVariant, Pos, Range};
+use crate::{
+    selection::Selection, Direction, EditResult, LineData, MoveVariant, Pos, Range, Token,
+};
 
 pub struct LineSelection {
     pub row: i32,
@@ -116,6 +118,13 @@ impl EditorState {
         }
 
         line_selections
+    }
+
+    pub fn find_widget_at(&self, pos: Pos<f32>) -> Option<usize> {
+        match self.linedata.hover(pos) {
+            Some(Token::Widget { id, .. }) => Some(id),
+            _ => None,
+        }
     }
 
     fn mk_selection(&mut self, caret: Pos) -> (usize, Selection) {

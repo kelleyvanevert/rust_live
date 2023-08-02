@@ -454,6 +454,30 @@ impl LineData {
         }
     }
 
+    pub fn hover(&self, pos: Pos<f32>) -> Option<Token> {
+        if pos.row < 0.0 || pos.col < 0.0 {
+            return None;
+        }
+
+        let row = pos.row.floor() as usize;
+        let Some(line) = self.0.get(row) else {
+            return None;
+        };
+
+        let col = pos.col.floor() as usize;
+
+        let mut acc = 0;
+        for token in line {
+            let w = token.width();
+            if acc <= col && col < acc + w {
+                return Some(*token);
+            }
+            acc += token.width();
+        }
+
+        None
+    }
+
     /**
         Snaps the given pos to the neasest valid caret position, and returns:
 
@@ -462,7 +486,7 @@ impl LineData {
         - the cell at the previous position (which can be `None` if at the start of a line);
         - the cell at that position (which can be `None` if at the end of a line);
         - whether the position was inside the text (end of line is valid);
-        - whether the position was valid (i.e. not inside a widget).
+        - whether the position was valid (i.e. not inside a widget);
     */
     pub fn snap_nearest(&self, pos: Pos) -> (Pos, usize, Option<Token>, Option<Token>, bool, bool) {
         let empty_line = &vec![];
