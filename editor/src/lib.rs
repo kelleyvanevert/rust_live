@@ -10,9 +10,9 @@ mod widgets;
 
 use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
-use std::path::PathBuf;
 use std::time::{Duration, Instant, SystemTime};
 use widget::{Widget, WidgetManager};
+use widgets::color_swatch::ColorSwatchWidget;
 use widgets::sample::SampleWidget;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -43,8 +43,8 @@ pub fn run() {
 
     let mut widget_manager = WidgetManager::new();
 
-    let id_0 = widget_manager.add(Box::new(SampleWidget::new(PathBuf::from("12345"))));
-    let id_1 = widget_manager.add(Box::new(SampleWidget::new(PathBuf::from("1234"))));
+    let id_0 = widget_manager.add(Box::new(ColorSwatchWidget::new()));
+    let id_1 = widget_manager.add(Box::new(ColorSwatchWidget::new()));
 
     let linedata = LineData::from(
         "A kelley wrote

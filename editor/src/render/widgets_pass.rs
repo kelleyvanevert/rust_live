@@ -119,8 +119,8 @@ impl WidgetsPass {
         for group in widget_instances.group_by(|a, b| a.0 == b.0) {
             let id = group[0].0;
             let (min_x, min_y, max_x, max_y) = group[0].1;
-            let width = (max_x - min_x).round() as u32;
-            let height = (max_y - min_y).round() as u32;
+            let width = (max_x - min_x).round() as usize;
+            let height = (max_y - min_y).round() as usize;
 
             let widget_texture = self.widget_textures.entry(id).or_insert_with(|| {
                 WidgetTexture::new(
@@ -207,8 +207,8 @@ pub struct WidgetTexture {
 impl WidgetTexture {
     pub fn new(
         id: usize,
-        width: u32,
-        height: u32,
+        width: usize,
+        height: usize,
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
         bind_group_layout: &wgpu::BindGroupLayout,
@@ -219,8 +219,8 @@ impl WidgetTexture {
         // let dimensions = diffuse_image.dimensions();
 
         let size = wgpu::Extent3d {
-            width,
-            height,
+            width: width as u32,
+            height: height as u32,
             depth_or_array_layers: 1,
         };
 
