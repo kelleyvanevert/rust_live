@@ -69,9 +69,7 @@ run off
     let mut meta_or_ctrl_pressed = false;
     let mut mouse_at: Option<(f32, f32)> = None;
 
-    let mut render = pollster::block_on(render::Render::new(&window));
-
-    let mut apply_shader_pipeline = true;
+    let mut render = pollster::block_on(render::Renderer::new(&window));
 
     let mut clipboard = Clipboard::new();
 
@@ -129,11 +127,7 @@ run off
                         editor_state.write(" ");
                     }
                     (Key::Enter, ElementState::Pressed) => {
-                        if meta_or_ctrl_pressed {
-                            apply_shader_pipeline = !apply_shader_pipeline;
-                        } else {
-                            editor_state.write("\n");
-                        }
+                        editor_state.write("\n");
                     }
                     (Key::Backspace, ElementState::Pressed) => {
                         editor_state.backspace(if alt_pressed {
@@ -242,7 +236,7 @@ run off
                     // is_selecting = false;
                 }
                 WindowEvent::CursorMoved { position, .. } => {
-                    let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
+                    let position: LogicalPosition<f32> = position.to_logical(render.system.scale_factor.into());
                     let p = (position.x as f32, position.y as f32);
                     mouse_at = Some(p);
 
@@ -254,14 +248,14 @@ run off
                 WindowEvent::Moved(u) => {
                     println!("moved {:?}", u);
                 }
-                WindowEvent::DragEnter { paths, position } => {
+                // WindowEvent::DragEnter { paths, position } => {
                     // println!("drag enter {:?}", position);
                     // for path in paths {
                     //     println!("  - {:?}", path);
                     // }
-                }
+                // }
                 WindowEvent::DragOver { position } => {
-                    let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
+                    let position: LogicalPosition<f32> = position.to_logical(render.system.scale_factor.into());
                     let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
                     editor_state.file_drag_hover(pos);
@@ -271,7 +265,7 @@ run off
                         return;
                     };
 
-                    let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
+                    let position: LogicalPosition<f32> = position.to_logical(render.system.scale_factor.into());
                     let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
                     editor_state.insert(pos, Token::Widget { id: 0, width: 5 }.into(), true);
@@ -285,7 +279,7 @@ run off
                 _ => (),
             },
             winit::event::Event::RedrawRequested(_) => {
-                render.render_state(&editor_state, apply_shader_pipeline);
+                render.draw(&editor_state);
                 // if state.game_state != state::GameState::Quiting {
                 window.request_redraw();
                 // }

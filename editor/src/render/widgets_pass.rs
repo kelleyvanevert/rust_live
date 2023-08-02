@@ -1,12 +1,9 @@
-use crate::highlight::CodeToken;
-
 use super::{
     system::SystemData,
     widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex},
 };
 
 use image::GenericImageView;
-use live_editor_state::Pos;
 use wgpu::TextureView;
 
 pub struct WidgetsPass {
@@ -205,56 +202,19 @@ impl WidgetsPass {
         }
     }
 
-    // fn draw(
-    //     &mut self,
-    //     // surface: &wgpu::Surface,
-    //     // device: &wgpu::Device,
-    //     // queue: &wgpu::Queue,
-    //     // system_bind_group: &wgpu::BindGroup,
-    //     // obj_model: &Model,
-    // ) -> Result<(), wgpu::SurfaceError> {
-    //     todo!()
-    // }
-
-    pub fn render_state(
+    pub fn draw(
         &mut self,
         device: &wgpu::Device,
+        _queue: &wgpu::Queue,
         system: &SystemData,
-        // render: &Render,
-        // pos_to_px: impl Fn(Pos) -> (f32, f32),
-        // px_to_pos: impl Fn((f32, f32)) -> Pos,
         view: &TextureView,
-        code: &[(usize, Vec<CodeToken>)],
+        widget_instances: Vec<(usize, (f32, f32, f32, f32))>,
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let sf = system.scale_factor;
-
         let mut widgets_builder = WidgetQuadBufferBuilder::new();
 
-        for (row, line) in code {
-            for token in line {
-                match token {
-                    CodeToken::Widget { col, width, .. } => {
-                        let (x_start, y) = system.pos_to_px(Pos {
-                            row: *row as i32,
-                            col: *col as i32,
-                        });
-
-                        let (x_end, _) = system.pos_to_px(Pos {
-                            row: *row as i32,
-                            col: (col + width) as i32,
-                        });
-
-                        widgets_builder.push_quad(
-                            x_start,
-                            y + 6.0 / sf,
-                            x_end,
-                            y + system.char_size.1 / sf - 6.0 / sf,
-                        );
-                    }
-                    _ => {}
-                }
-            }
+        for (_id, quad) in widget_instances {
+            widgets_builder.push_quad(quad);
         }
 
         let (stg_vertex, stg_index, widgets_num_indices) = widgets_builder.build(&device);
@@ -263,12 +223,11 @@ impl WidgetsPass {
         stg_index.copy_to_buffer(encoder, &self.widgets_index_buffer);
 
         let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Main render pass"),
+            label: Some("Widgets render pass"),
             color_attachments: &[Some(wgpu::RenderPassColorAttachment {
                 view: &view,
                 resolve_target: None,
 
-                // 1. Clear background
                 ops: wgpu::Operations {
                     load: wgpu::LoadOp::Load,
                     store: true,
@@ -284,10 +243,7 @@ impl WidgetsPass {
         render_pass.set_index_buffer(
             self.widgets_index_buffer.slice(..),
             wgpu::IndexFormat::Uint32,
-        ); // 1.
-        render_pass.draw_indexed(0..widgets_num_indices, 0, 0..1); // 2.
+        );
+        render_pass.draw_indexed(0..widgets_num_indices, 0, 0..1);
     }
 }
-
-// impl Pass for WidgetsPass {
-// }

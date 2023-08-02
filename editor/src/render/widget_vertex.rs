@@ -46,7 +46,7 @@ impl WidgetQuadBufferBuilder {
         }
     }
 
-    pub fn push_quad(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32) {
+    pub fn push_quad(&mut self, (min_x, min_y, max_x, max_y): (f32, f32, f32, f32)) {
         self.vertex_data.extend(&[
             WidgetVertex {
                 position: [min_x, min_y, 0.0],
