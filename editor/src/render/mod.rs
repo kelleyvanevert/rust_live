@@ -117,7 +117,7 @@ impl<'a> Renderer<'a> {
         self.selections_pass.resize(&self.queue, &self.config);
     }
 
-    pub fn draw(&mut self, editor_state: &EditorState, widget_manager: &WidgetManager) {
+    pub fn draw(&mut self, editor_state: &EditorState, widget_manager: &mut WidgetManager) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });

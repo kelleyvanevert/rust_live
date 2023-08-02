@@ -10,8 +10,13 @@ pub trait Widget {
     }
 
     // Draw to pixel frame
-    fn draw(&self, _frame: &mut [u8], _width: f32, _height: f32) {
-        //
+    fn draw(&self, frame: &mut [u8], width: u32, height: u32) {
+        for pixel in frame.chunks_exact_mut(4) {
+            pixel[0] = 0x00; // R
+            pixel[1] = 0x00; // G
+            pixel[2] = 0x00; // B
+            pixel[3] = 0xff; // A
+        }
     }
 
     // When the file is saved in "bundled" mode, this method is called
@@ -48,6 +53,12 @@ impl WidgetManager {
 
     pub fn get_column_width(&self, id: usize) -> Option<usize> {
         self.widgets.get(id).map(|w| w.column_width())
+    }
+
+    pub fn draw(&mut self, id: usize, frame: &mut [u8], width: u32, height: u32) {
+        if let Some(widget) = self.widgets.get_mut(id) {
+            widget.draw(frame, width, height);
+        }
     }
 
     pub fn hover(&mut self, id: usize) {

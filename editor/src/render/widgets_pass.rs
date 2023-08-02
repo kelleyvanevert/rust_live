@@ -7,7 +7,6 @@ use super::{
     widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex},
 };
 
-use image::GenericImageView;
 use wgpu::TextureView;
 
 pub struct WidgetsPass {
@@ -114,17 +113,46 @@ impl WidgetsPass {
         system: &SystemData,
         view: &TextureView,
         widget_instances: Vec<(usize, (f32, f32, f32, f32))>,
-        _widget_manager: &WidgetManager,
+        widget_manager: &mut WidgetManager,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         for group in widget_instances.group_by(|a, b| a.0 == b.0) {
             let id = group[0].0;
-            println!("Widget {id} with {} instances", group.len());
+            let (min_x, min_y, max_x, max_y) = group[0].1;
+            let width = (max_x - min_x).round() as u32;
+            let height = (max_y - min_y).round() as u32;
 
             let widget_texture = self.widget_textures.entry(id).or_insert_with(|| {
-                println!("Creating new widget texture for widget ID {id}...");
-                WidgetTexture::new(device, queue, &self.texture_bind_group_layout)
+                WidgetTexture::new(
+                    id,
+                    width,
+                    height,
+                    device,
+                    queue,
+                    &self.texture_bind_group_layout,
+                )
             });
+
+            widget_manager.draw(id, widget_texture.frame_mut(), width, height);
+
+            queue.write_texture(
+                // Tells wgpu where to copy the pixel data
+                wgpu::ImageCopyTexture {
+                    texture: &widget_texture.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d::ZERO,
+                    aspect: wgpu::TextureAspect::All,
+                },
+                // The actual pixel data
+                &widget_texture.frame(),
+                // The layout of the texture
+                wgpu::ImageDataLayout {
+                    offset: 0,
+                    bytes_per_row: Some(widget_texture.size.width * 4),
+                    rows_per_image: Some(widget_texture.size.height),
+                },
+                widget_texture.size,
+            );
 
             let mut widgets_builder = WidgetQuadBufferBuilder::new();
 
@@ -165,10 +193,12 @@ impl WidgetsPass {
 }
 
 pub struct WidgetTexture {
-    // texture: wgpu::Texture,
+    texture: wgpu::Texture,
+    size: wgpu::Extent3d,
     // texture_view: wgpu::TextureView,
     // sampler: wgpu::Sampler,
     bind_group: wgpu::BindGroup,
+    pixels: Vec<u8>,
 
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -176,62 +206,43 @@ pub struct WidgetTexture {
 
 impl WidgetTexture {
     pub fn new(
+        id: usize,
+        width: u32,
+        height: u32,
         device: &wgpu::Device,
-        queue: &wgpu::Queue,
+        _queue: &wgpu::Queue,
         bind_group_layout: &wgpu::BindGroupLayout,
     ) -> Self {
-        let diffuse_bytes = include_bytes!("../../res/example_waveform.png");
-        let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
-        let diffuse_rgba = diffuse_image.to_rgba8();
-        let dimensions = diffuse_image.dimensions();
+        // let diffuse_bytes = include_bytes!("../../res/example_waveform.png");
+        // let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
+        // let diffuse_rgba = diffuse_image.to_rgba8();
+        // let dimensions = diffuse_image.dimensions();
 
-        let texture_size = wgpu::Extent3d {
-            width: dimensions.0,
-            height: dimensions.1,
+        let size = wgpu::Extent3d {
+            width,
+            height,
             depth_or_array_layers: 1,
         };
 
         let texture = device.create_texture(&wgpu::TextureDescriptor {
-            // All textures are stored as 3D, we represent our 2D texture
-            // by setting depth to 1.
-            size: texture_size,
+            label: Some(&format!("Widget #{id} pixel texture")),
+            size,
             mip_level_count: 1, // We'll talk about this a little later
             sample_count: 1,
             dimension: wgpu::TextureDimension::D2,
-            // Most images are stored using sRGB so we need to reflect that here.
             format: wgpu::TextureFormat::Rgba8UnormSrgb,
-            // TEXTURE_BINDING tells wgpu that we want to use this texture in shaders
-            // COPY_DST means that we want to copy data to this texture
             usage: wgpu::TextureUsages::TEXTURE_BINDING | wgpu::TextureUsages::COPY_DST,
-            label: Some("Widget texture"),
-            // This is the same as with the SurfaceConfig. It
-            // specifies what texture formats can be used to
-            // create TextureViews for this texture. The base
-            // texture format (Rgba8UnormSrgb in this case) is
-            // always supported. Note that using a different
-            // texture format is not supported on the WebGL2
-            // backend.
             view_formats: &[],
         });
 
-        queue.write_texture(
-            // Tells wgpu where to copy the pixel data
-            wgpu::ImageCopyTexture {
-                texture: &texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d::ZERO,
-                aspect: wgpu::TextureAspect::All,
-            },
-            // The actual pixel data
-            &diffuse_rgba,
-            // The layout of the texture
-            wgpu::ImageDataLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * dimensions.0),
-                rows_per_image: Some(dimensions.1),
-            },
-            texture_size,
-        );
+        // buffer size
+        // See [https://github.com/parasyte/pixels/blob/main/src/builder.rs]
+        // 32-bit formats, 8 bits per component
+        let texture_format_size = 4;
+        let pixels_buffer_size = (width * height * texture_format_size) as usize;
+
+        let mut pixels = Vec::with_capacity(pixels_buffer_size);
+        pixels.resize_with(pixels_buffer_size, Default::default);
 
         // We don't need to configure the texture view much, so let's
         // let wgpu define it.
@@ -277,13 +288,50 @@ impl WidgetTexture {
         });
 
         Self {
-            // texture,
+            texture,
+            size,
             // texture_view,
             // sampler,
             bind_group,
+            pixels,
 
             vertex_buffer,
             index_buffer,
         }
+    }
+
+    // pub fn draw(&mut self) {
+    //     queue.write_texture(
+    //         // Tells wgpu where to copy the pixel data
+    //         wgpu::ImageCopyTexture {
+    //             texture: &texture,
+    //             mip_level: 0,
+    //             origin: wgpu::Origin3d::ZERO,
+    //             aspect: wgpu::TextureAspect::All,
+    //         },
+    //         // The actual pixel data
+    //         &diffuse_rgba,
+    //         // The layout of the texture
+    //         wgpu::ImageDataLayout {
+    //             offset: 0,
+    //             bytes_per_row: Some(4 * dimensions.0),
+    //             rows_per_image: Some(dimensions.1),
+    //         },
+    //         texture_size,
+    //     );
+    // }
+
+    /// Get a mutable byte slice for the pixel buffer. The buffer is _not_ cleared for you; it will
+    /// retain the previous frame's contents until you clear it yourself.
+    pub fn frame_mut(&mut self) -> &mut [u8] {
+        &mut self.pixels
+    }
+
+    /// Get an immutable byte slice for the pixel buffer.
+    ///
+    /// This may be useful for operations that must sample the buffer, such as blending pixel
+    /// colours directly into it.
+    pub fn frame(&self) -> &[u8] {
+        &self.pixels
     }
 }

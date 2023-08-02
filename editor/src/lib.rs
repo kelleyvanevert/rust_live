@@ -302,7 +302,7 @@ run off
                 _ => (),
             },
             winit::event::Event::RedrawRequested(_) => {
-                render.draw(&editor_state, &  widget_manager);
+                render.draw(&editor_state, &mut widget_manager);
                 // if state.game_state != state::GameState::Quiting {
                 window.request_redraw();
                 // }

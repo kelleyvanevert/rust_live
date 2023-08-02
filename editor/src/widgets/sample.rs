@@ -28,7 +28,14 @@ impl Widget for SampleWidget {
         }
     }
 
-    fn draw(&self, _frame: &mut [u8], _width: f32, _height: f32) {
-        // TODO
+    fn draw(&self, frame: &mut [u8], _width: u32, _height: u32) {
+        let c = if self.hovering { 0x9a } else { 0xf0 };
+
+        for pixel in frame.chunks_exact_mut(4) {
+            pixel[0] = c; // R
+            pixel[1] = c; // G
+            pixel[2] = c; // B
+            pixel[3] = 0xff; // A
+        }
     }
 }
