@@ -113,6 +113,21 @@ impl LineData {
         self.0[row as usize].iter().map(Token::width).sum::<usize>() as i32
     }
 
+    pub fn line_index_col(&self, row: i32, i: usize) -> i32 {
+        if row < 0 || row >= self.0.len() as i32 {
+            return 0;
+        }
+
+        self.0[row as usize][..i]
+            .iter()
+            .map(Token::width)
+            .sum::<usize>() as i32
+    }
+
+    pub fn empty(&self) -> bool {
+        self.len() == 0 || (self.len() == 1 && self.0[0].len() == 0)
+    }
+
     pub fn line_empty(&self, row: usize) -> bool {
         if row >= self.len() {
             return true;
@@ -452,6 +467,111 @@ impl LineData {
 
             return LineData(lines);
         }
+    }
+
+    // TODO -- search for multiline texts
+    pub fn search_next_occurrence(&self, pos: Pos, text: &LineData) -> Option<Range> {
+        assert_eq!(text.0.len(), 1);
+        let tokens = &text.0[0];
+
+        let (r0, r0i0) = self.snap_indices(pos);
+        for r in r0..self.0.len() {
+            let i0 = if r == r0 { r0i0 + 1 } else { 0 };
+            'compare: for i in i0..self.0[r].len() {
+                for j in 0..tokens.len() {
+                    if i + j >= self.0[r].len() || tokens[j] != self.0[r][i + j] {
+                        continue 'compare;
+                    }
+                }
+
+                // found
+                let row = r as i32;
+                let col = self.line_index_col(row, i);
+                return Some(Range {
+                    start: Pos { row, col },
+                    end: Pos {
+                        row,
+                        col: col + tokens.iter().map(|t| t.width()).sum::<usize>() as i32,
+                    },
+                });
+            }
+        }
+
+        None
+    }
+
+    pub fn find_word_at(&self, pos: Pos) -> Option<Range> {
+        let (pos, i, prev, next, _, _) = self.snap_nearest(pos);
+
+        // let mut word_tokens = vec![];
+
+        let mut start_i = i;
+        let mut end_i = i;
+
+        // prefer to select widget on the right, if possible
+        if let Some(t) = next && t.is_widget() {
+            return Some(Range {
+                start: pos,
+                end: Pos {
+                    row: pos.row,
+                    col: pos.col + t.width() as i32,
+                },
+            });
+        }
+
+        // selecting word going right
+        if let Some(t) = next && t.is_part_of_word() {
+            let mut i = i;
+            while let Some(t) = self.0[pos.row as usize].get(i) && t.is_part_of_word() {
+                // word_tokens.push(*t);
+                end_i = i + 1;
+                i += 1;
+            }
+        }
+
+        // if no word on right, try to select widget on left
+        if start_i == end_i && let Some(t) = prev && t.is_widget() {
+            return Some(Range {
+                start: Pos {
+                    row: pos.row,
+                    col: pos.col - t.width() as i32,
+                },
+                end: pos,
+            });
+        }
+
+        // selecting word going left
+        if let Some(t) = prev && t.is_part_of_word() {
+            let mut i = i - 1;
+            while let Some(t) = self.0[pos.row as usize].get(i) && t.is_part_of_word() {
+                // word_tokens.insert(0, *t);
+                start_i = i;
+                if i == 0 {
+                    break;
+                }
+                i -= 1;
+            }
+        }
+
+        if start_i < end_i {
+            // println!("found: [{} -- {}] {:?}", start_i, end_i, word_tokens);
+            return Some(Range {
+                start: Pos {
+                    row: pos.row,
+                    col: self.line_index_col(pos.row, start_i),
+                },
+                end: Pos {
+                    row: pos.row,
+                    col: self.line_index_col(pos.row, end_i),
+                },
+            });
+        }
+
+        // if word_tokens.len() > 0 {
+        //     return Some(word_tokens.into());
+        // }
+
+        None
     }
 
     pub fn hover(&self, pos: Pos<f32>) -> Option<Token> {

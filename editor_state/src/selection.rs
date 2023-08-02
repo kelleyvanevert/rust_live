@@ -11,6 +11,13 @@ pub struct Selection {
 }
 
 impl Selection {
+    pub fn just_caret(&self) -> bool {
+        match self.anchor {
+            None => true,
+            Some(a) => a == self.caret,
+        }
+    }
+
     pub fn has_selection(&self) -> Option<Range> {
         self.anchor.and_then(|anchor| {
             if anchor == self.caret {

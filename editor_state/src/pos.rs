@@ -2,7 +2,7 @@ use std::cmp::Ordering;
 
 use crate::Direction;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub struct Pos<T = i32> {
     pub row: T,
     pub col: T,
@@ -79,7 +79,7 @@ impl Ord for Pos<i32> {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct Range {
     pub start: Pos,
     pub end: Pos,

@@ -178,6 +178,9 @@ run off
                             if let Some(data) = clipboard.read() {
                                 editor_state.paste(data);
                             }
+                        } else if s.as_str() == "d" && meta_or_ctrl_pressed {
+                            // todo improve (ctrl/meta depending on OS)
+                            editor_state.word_select();
                         } else if s.as_str() == "a" && meta_or_ctrl_pressed {
                             editor_state.select_all();
                         } else {

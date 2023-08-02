@@ -1,3 +1,5 @@
+use std::collections::HashSet;
+
 use tinyset::SetUsize;
 
 use crate::{
@@ -154,6 +156,17 @@ impl EditorState {
         id
     }
 
+    pub fn add_selection(&mut self, range: Range) -> usize {
+        let pos = self.linedata.snap(range.end);
+        let (id, mut selection) = self.mk_selection(pos);
+        selection.anchor = Some(range.start);
+
+        self.selections.push(selection);
+        self.normalize_selections(Some(id), None); // ??
+
+        id
+    }
+
     pub fn set_single_caret(&mut self, pos: Pos) -> usize {
         let pos = self.linedata.snap(pos);
         let (id, selection) = self.mk_selection(pos);
@@ -172,6 +185,79 @@ impl EditorState {
 
         id
     }
+
+    /**
+        Perform "word selection", such as it will also typically happen in VS Code when pressing Cmd+D:
+
+        - if there's a mismatch in selections (meaning that not all selections contain the same underlying text):
+            - for each just-caret-selection, that neighbors a word: select the whole word
+            - (otherwise, do nothing)
+
+        - if there's no mismatch
+            - if the match is '' (i.e. nothing selected), then for each just-caret-selection, that neighbors a word: select the whole word
+            - otherwise, if there's another occurrence of whatever's currently selected, select the first one after the most recently added (or changed?) selection
+    */
+    pub fn word_select(&mut self) {
+        if self.selections.len() == 0 {
+            return; // nothing to do
+        }
+
+        // first, check if all selections match
+        let text = self.linedata.copy_range(self.selections[0].range());
+        let mismatch = self.selections[1..]
+            .iter()
+            .any(|s| self.linedata.copy_range(s.range()) != text);
+
+        if mismatch || text.empty() {
+            let mut done = SetUsize::new();
+            while let Some(s) = self
+                .selections
+                .iter_mut()
+                .find(|s| !done.contains(s.id) && s.just_caret())
+            {
+                done.insert(s.id);
+
+                if let Some(range) = self.linedata.find_word_at(s.caret) {
+                    s.anchor = Some(range.start);
+                    s.caret = range.end;
+                    s.desired_col = Some(range.start.col);
+                }
+            }
+
+            self.normalize_selections(None, Some(Direction::Right));
+        } else {
+            let already_found = self
+                .selections
+                .iter()
+                .map(|s| s.range())
+                .collect::<HashSet<_>>();
+
+            let (s, _) = self
+                .selections
+                .iter()
+                .map(|s| (s, s.id))
+                .max_by_key(|t| t.1)
+                .unwrap();
+
+            let mut search_from = s.range().end;
+            loop {
+                if let Some(found_range) = self.linedata.search_next_occurrence(search_from, &text)
+                {
+                    if already_found.contains(&found_range) {
+                        search_from = found_range.end;
+                        // continue search for next
+                    } else {
+                        self.add_selection(found_range);
+                        break;
+                    }
+                } else {
+                    break;
+                }
+            }
+        }
+    }
+
+    // pub fn get_
 
     pub fn extend_selection_to(&mut self, pos: Pos) -> Option<usize> {
         let Some(first_selection_id) = self.selections.iter().map(|s| s.id).min() else {
