@@ -1,5 +1,6 @@
 mod buffer;
 mod pass;
+mod system;
 mod widget_vertex;
 mod widgets_pass;
 
@@ -7,12 +8,10 @@ use crate::highlight::{syntax_highlight, CodeToken};
 
 use self::{
     buffer::{QuadBufferBuilder, Vertex},
-    widget_vertex::WidgetQuadBufferBuilder,
+    system::SystemData,
     widgets_pass::WidgetsPass,
 };
-use cgmath::SquareMatrix;
 use live_editor_state::{EditorState, LineSelection, Pos};
-use wgpu::util::DeviceExt;
 use wgpu_text::{
     glyph_brush::{
         ab_glyph::FontRef, FontId, HorizontalAlign, Layout, OwnedText, Section, Text, VerticalAlign,
@@ -31,44 +30,7 @@ const BACKGROUND_COLOR: wgpu::Color = wgpu::Color {
     a: 1.,
 };
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct SystemUniform {
-    view_proj: [[f32; 4]; 4],
-}
-
-impl SystemUniform {
-    fn new() -> Self {
-        Self {
-            view_proj: cgmath::Matrix4::identity().into(),
-        }
-    }
-
-    fn update(&mut self, sf: f32, (width, height): (f32, f32)) {
-        //             (1,1)
-        //        (0,0)
-        // (-1,-1)
-        let transform = cgmath::Matrix4::from_translation(cgmath::vec3(-1.0, 1.0, 0.0));
-        // (0, 0)
-        //        (1,1)
-        //             (2,2)
-        let transform = transform
-            * cgmath::Matrix4::from_nonuniform_scale(
-                sf * (2.0 / width),
-                sf * (2.0 / height) * -1.0,
-                1.0,
-            );
-        // (0,0)
-        //      (300,200)
-        //              (600,400)
-
-        self.view_proj = transform.into();
-    }
-}
-
 pub struct Render<'a> {
-    pub scale_factor: f32,
-
     surface: wgpu::Surface,
     config: wgpu::SurfaceConfiguration,
     // #[allow(dead_code)]
@@ -76,24 +38,19 @@ pub struct Render<'a> {
     device: wgpu::Device,
     queue: wgpu::Queue,
 
+    pub system: SystemData,
     render_pipeline: wgpu::RenderPipeline,
-    system_uniform: SystemUniform,
-    system_bind_group: wgpu::BindGroup,
-    system_buffer: wgpu::Buffer,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
 
     widgets_pass: WidgetsPass,
 
-    // vertex_buffer: wgpu::Buffer,
-    // index_buffer: wgpu::Buffer,
     regular_font_id: FontId,
     bold_font_id: FontId,
     code_font_size: f32,
     char_size: (f32, f32),
     title_brush: TextBrush<FontRef<'a>>,
     code_brush: TextBrush<FontRef<'a>>,
-    // staging_belt: wgpu::util::StagingBelt,
 }
 
 impl<'a> Render<'a> {
@@ -146,65 +103,49 @@ impl<'a> Render<'a> {
             source: wgpu::ShaderSource::Wgsl(include_str!("../../res/shader.wgsl").into()),
         });
 
+        // SETUP TEXT STUFF
+        // ===
+
+        let roboto_slab: &[u8] = include_bytes!("../../res/fonts/RobotoSlab-Bold.ttf");
+
+        let title_brush = BrushBuilder::using_font_bytes(roboto_slab).unwrap().build(
+            &device,
+            config.width,
+            config.height,
+            config.format,
+        );
+
+        let fira_code_bold_font =
+            FontRef::try_from_slice(include_bytes!("../../res/fonts/FiraCode-Bold.ttf")).unwrap();
+
+        let fira_code_retina_font =
+            FontRef::try_from_slice(include_bytes!("../../res/fonts/FiraCode-Retina.ttf")).unwrap();
+
+        let code_font_size = 50.0;
+
+        let mut code_brush =
+            BrushBuilder::using_fonts(vec![fira_code_retina_font.clone(), fira_code_bold_font])
+                .build(&device, config.width, config.height, config.format);
+
+        let regular_font_id = FontId(0);
+        let bold_font_id = FontId(1);
+
+        let tmp_section = Section::default().add_text(Text::new("x").with_scale(code_font_size));
+
+        let x_bounds = code_brush.glyph_bounds(tmp_section).unwrap();
+
+        let char_size = (x_bounds.width(), x_bounds.height());
+
+        let system = SystemData::new(scale_factor, char_size, &device, &queue, &config);
+
         // Create pipeline layout
-        let system_bind_group_layout =
-            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-                label: None,
-                entries: &[
-                    wgpu::BindGroupLayoutEntry {
-                        binding: 0,
-                        visibility: wgpu::ShaderStages::VERTEX,
-                        ty: wgpu::BindingType::Buffer {
-                            ty: wgpu::BufferBindingType::Uniform,
-                            has_dynamic_offset: false,
-                            min_binding_size: None,
-                        },
-                        count: None,
-                    },
-                    // wgpu::BindGroupLayoutEntry {
-                    //     binding: 1,
-                    //     visibility: wgpu::ShaderStages::FRAGMENT,
-                    //     ty: wgpu::BindingType::Texture {
-                    //         multisampled: false,
-                    //         sample_type: wgpu::TextureSampleType::Uint,
-                    //         view_dimension: wgpu::TextureViewDimension::D2,
-                    //     },
-                    //     count: None,
-                    // },
-                ],
-            });
 
         let render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Render Pipeline Layout"),
-                bind_group_layouts: &[&system_bind_group_layout],
+                bind_group_layouts: &[&system.bind_group_layout],
                 push_constant_ranges: &[],
             });
-
-        let mut system_uniform = SystemUniform::new();
-        system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
-
-        let system_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("System buffer"),
-            contents: bytemuck::cast_slice(&[system_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
-        // Create bind group
-        let system_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-            layout: &system_bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: system_buffer.as_entire_binding(),
-                },
-                // wgpu::BindGroupEntry {
-                //     binding: 1,
-                //     resource: wgpu::BindingResource::TextureView(&texture_view),
-                // },
-            ],
-            label: None,
-        });
 
         let render_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
             label: Some("Render Pipeline"),
@@ -260,64 +201,20 @@ impl<'a> Render<'a> {
             mapped_at_creation: false,
         });
 
-        // SETUP TEXT STUFF
-        // ===
-
-        let roboto_slab: &[u8] = include_bytes!("../../res/fonts/RobotoSlab-Bold.ttf");
-
-        let title_brush = BrushBuilder::using_font_bytes(roboto_slab).unwrap().build(
-            &device,
-            config.width,
-            config.height,
-            config.format,
-        );
-
-        let fira_code_bold_font =
-            FontRef::try_from_slice(include_bytes!("../../res/fonts/FiraCode-Bold.ttf")).unwrap();
-
-        let fira_code_retina_font =
-            FontRef::try_from_slice(include_bytes!("../../res/fonts/FiraCode-Retina.ttf")).unwrap();
-
-        let code_font_size = 50.0;
-
-        let mut code_brush =
-            BrushBuilder::using_fonts(vec![fira_code_retina_font.clone(), fira_code_bold_font])
-                .build(&device, config.width, config.height, config.format);
-
-        let regular_font_id = FontId(0);
-        let bold_font_id = FontId(1);
-
-        let tmp_section = Section::default().add_text(Text::new("x").with_scale(code_font_size));
-
-        let x_bounds = code_brush.glyph_bounds(tmp_section).unwrap();
-
-        let char_size = (x_bounds.width(), x_bounds.height());
-
         // DRAWING SEPARATE IMAGES?
         // TODO: make this dynamic, for widgets
         // ===
 
-        let widgets_pass = WidgetsPass::new(
-            scale_factor,
-            char_size,
-            &device,
-            &queue,
-            &config,
-            &system_bind_group_layout,
-        );
+        let widgets_pass = WidgetsPass::new(&device, &queue, &config, &system);
 
         Self {
-            scale_factor,
-
             device,
             queue,
             surface,
             config,
 
             render_pipeline,
-            system_uniform,
-            system_bind_group,
-            system_buffer,
+            system,
             vertex_buffer,
             index_buffer,
 
@@ -342,7 +239,7 @@ impl<'a> Render<'a> {
         self.config.height as f32
     }
 
-    pub fn resize(&mut self, size: PhysicalSize<u32>) {
+    pub fn resize(&mut self, mut size: PhysicalSize<u32>) {
         self.config.width = size.width.max(1);
         self.config.height = size.height.max(1);
         self.surface.configure(&self.device, &self.config);
@@ -359,42 +256,17 @@ impl<'a> Render<'a> {
             &self.queue,
         );
 
-        self.system_uniform.update(
-            self.scale_factor,
-            (self.config.width as f32, self.config.height as f32),
-        );
-
-        self.queue.write_buffer(
-            &self.system_buffer,
-            0,
-            bytemuck::cast_slice(&[self.system_uniform]),
-        );
-    }
-
-    pub fn pos_to_px(&self, pos: Pos) -> (f32, f32) {
-        let sf = self.scale_factor;
-        let x = (100.0 + self.char_size.0 * (pos.col as f32)) / sf;
-        let y = (260.0 + self.char_size.1 * (pos.row as f32)) / sf;
-        (x, y)
-    }
-
-    pub fn px_to_pos(&self, (x, y): (f32, f32)) -> Pos {
-        let sf = self.scale_factor;
-        Pos {
-            row: ((y * sf - 260.0) / self.char_size.1).floor() as i32,
-            col: ((x * sf - 100.0) / self.char_size.0).round() as i32,
-        }
+        self.system.resize(&self.queue, &self.config);
     }
 
     pub fn render_state(&mut self, editor_state: &EditorState, apply_shader_pipeline: bool) {
-        let sf = self.scale_factor;
+        let sf = self.system.scale_factor;
 
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
 
         let mut builder = QuadBufferBuilder::new();
-        let mut widgets_builder = WidgetQuadBufferBuilder::new();
 
         let title_section = Section::default()
             .add_text(
@@ -451,22 +323,15 @@ impl<'a> Render<'a> {
                     CodeToken::Widget { col, width, .. } => {
                         code_section.text.push(mk_widget_space(*width));
 
-                        let (x_start, y) = self.pos_to_px(Pos {
+                        let (x_start, y) = self.system.pos_to_px(Pos {
                             row: *row as i32,
                             col: *col as i32,
                         });
 
-                        let (x_end, _) = self.pos_to_px(Pos {
+                        let (x_end, _) = self.system.pos_to_px(Pos {
                             row: *row as i32,
                             col: (col + width) as i32,
                         });
-
-                        widgets_builder.push_quad(
-                            x_start,
-                            y + 6.0 / sf,
-                            x_end,
-                            y + self.char_size.1 / sf - 6.0 / sf,
-                        );
                     }
                 }
             }
@@ -488,12 +353,12 @@ impl<'a> Render<'a> {
             col_end,
         } in editor_state.visual_selections()
         {
-            let (x_start, y) = self.pos_to_px(Pos {
+            let (x_start, y) = self.system.pos_to_px(Pos {
                 row,
                 col: col_start,
             });
 
-            let (x_end, _) = self.pos_to_px(Pos { row, col: col_end });
+            let (x_end, _) = self.system.pos_to_px(Pos { row, col: col_end });
 
             builder.push_quad(
                 x_start,
@@ -505,7 +370,7 @@ impl<'a> Render<'a> {
         }
 
         for caret in editor_state.caret_positions() {
-            let (cx, cy) = self.pos_to_px(caret);
+            let (cx, cy) = self.system.pos_to_px(caret);
 
             builder.push_quad(
                 cx,
@@ -572,7 +437,7 @@ impl<'a> Render<'a> {
 
         self.widgets_pass.render_state(
             &self.device,
-            &self.system_bind_group,
+            &self.system,
             // self.scale_factor,
             // self.char_size,
             // |pos: Pos| self.pos_to_px(pos),
@@ -601,7 +466,7 @@ impl<'a> Render<'a> {
             // 4. Draw selections and carets
             if apply_shader_pipeline {
                 render_pass.set_pipeline(&self.render_pipeline);
-                render_pass.set_bind_group(0, &self.system_bind_group, &[]);
+                render_pass.set_bind_group(0, &self.system.bind_group, &[]);
                 render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
                 render_pass
                     .set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.

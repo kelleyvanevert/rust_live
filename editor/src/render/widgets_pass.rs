@@ -1,15 +1,15 @@
 use crate::highlight::CodeToken;
 
-use super::widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex};
+use super::{
+    system::SystemData,
+    widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex},
+};
 
 use image::GenericImageView;
 use live_editor_state::Pos;
 use wgpu::TextureView;
 
 pub struct WidgetsPass {
-    scale_factor: f32,
-    char_size: (f32, f32),
-
     widgets_render_pipeline: wgpu::RenderPipeline,
     widgets_vertex_buffer: wgpu::Buffer,
     widgets_index_buffer: wgpu::Buffer,
@@ -18,13 +18,10 @@ pub struct WidgetsPass {
 
 impl WidgetsPass {
     pub fn new(
-        scale_factor: f32,
-        char_size: (f32, f32),
-        // phong_config: &PhongConfig,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
-        system_bind_group_layout: &wgpu::BindGroupLayout,
+        system: &SystemData,
     ) -> Self {
         let diffuse_bytes = include_bytes!("../../res/example_waveform.png");
         let diffuse_image = image::load_from_memory(diffuse_bytes).unwrap();
@@ -141,7 +138,7 @@ impl WidgetsPass {
         let widgets_render_pipeline_layout =
             device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Widgets render pipeline Layout"),
-                bind_group_layouts: &[&system_bind_group_layout, &widget_texture_bind_group_layout],
+                bind_group_layouts: &[&system.bind_group_layout, &widget_texture_bind_group_layout],
                 push_constant_ranges: &[],
             });
 
@@ -201,8 +198,6 @@ impl WidgetsPass {
         });
 
         Self {
-            scale_factor,
-            char_size,
             widgets_render_pipeline,
             widgets_vertex_buffer,
             widgets_index_buffer,
@@ -210,36 +205,21 @@ impl WidgetsPass {
         }
     }
 
-    fn draw(
-        &mut self,
-        // surface: &wgpu::Surface,
-        // device: &wgpu::Device,
-        // queue: &wgpu::Queue,
-        // system_bind_group: &wgpu::BindGroup,
-        // obj_model: &Model,
-    ) -> Result<(), wgpu::SurfaceError> {
-        todo!()
-    }
-
-    pub fn pos_to_px(&self, pos: Pos) -> (f32, f32) {
-        let sf = self.scale_factor;
-        let x = (100.0 + self.char_size.0 * (pos.col as f32)) / sf;
-        let y = (260.0 + self.char_size.1 * (pos.row as f32)) / sf;
-        (x, y)
-    }
-
-    pub fn px_to_pos(&self, (x, y): (f32, f32)) -> Pos {
-        let sf = self.scale_factor;
-        Pos {
-            row: ((y * sf - 260.0) / self.char_size.1).floor() as i32,
-            col: ((x * sf - 100.0) / self.char_size.0).round() as i32,
-        }
-    }
+    // fn draw(
+    //     &mut self,
+    //     // surface: &wgpu::Surface,
+    //     // device: &wgpu::Device,
+    //     // queue: &wgpu::Queue,
+    //     // system_bind_group: &wgpu::BindGroup,
+    //     // obj_model: &Model,
+    // ) -> Result<(), wgpu::SurfaceError> {
+    //     todo!()
+    // }
 
     pub fn render_state(
         &mut self,
         device: &wgpu::Device,
-        system_bind_group: &wgpu::BindGroup,
+        system: &SystemData,
         // render: &Render,
         // pos_to_px: impl Fn(Pos) -> (f32, f32),
         // px_to_pos: impl Fn((f32, f32)) -> Pos,
@@ -247,7 +227,7 @@ impl WidgetsPass {
         code: &[(usize, Vec<CodeToken>)],
         encoder: &mut wgpu::CommandEncoder,
     ) {
-        let sf = self.scale_factor;
+        let sf = system.scale_factor;
 
         let mut widgets_builder = WidgetQuadBufferBuilder::new();
 
@@ -255,12 +235,12 @@ impl WidgetsPass {
             for token in line {
                 match token {
                     CodeToken::Widget { col, width, .. } => {
-                        let (x_start, y) = self.pos_to_px(Pos {
+                        let (x_start, y) = system.pos_to_px(Pos {
                             row: *row as i32,
                             col: *col as i32,
                         });
 
-                        let (x_end, _) = self.pos_to_px(Pos {
+                        let (x_end, _) = system.pos_to_px(Pos {
                             row: *row as i32,
                             col: (col + width) as i32,
                         });
@@ -269,7 +249,7 @@ impl WidgetsPass {
                             x_start,
                             y + 6.0 / sf,
                             x_end,
-                            y + self.char_size.1 / sf - 6.0 / sf,
+                            y + system.char_size.1 / sf - 6.0 / sf,
                         );
                     }
                     _ => {}
@@ -298,7 +278,7 @@ impl WidgetsPass {
         });
 
         render_pass.set_pipeline(&self.widgets_render_pipeline);
-        render_pass.set_bind_group(0, &system_bind_group, &[]);
+        render_pass.set_bind_group(0, &system.bind_group, &[]);
         render_pass.set_bind_group(1, &self.widget_diffuse_bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.widgets_vertex_buffer.slice(..));
         render_pass.set_index_buffer(

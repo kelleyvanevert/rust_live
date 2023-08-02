@@ -217,7 +217,7 @@ run off
                 },
                 WindowEvent::MouseInput { state, button, .. } => {
                     if let Some(p) = mouse_at && state == ElementState::Pressed && button == MouseButton::Left {
-                        let pos = render.px_to_pos(p);
+                        let pos = render.system.px_to_pos(p);
                         if shift_pressed {
                             if editor_state.has_selections() {
                                 is_selecting = editor_state.extend_selection_to(pos);
@@ -247,7 +247,7 @@ run off
                     mouse_at = Some(p);
 
                     if let Some(id) = is_selecting {
-                        let caret = render.px_to_pos(p);
+                        let caret = render.system.px_to_pos(p);
                         editor_state.drag_select(caret, id);
                     }
                 }
@@ -262,7 +262,7 @@ run off
                 }
                 WindowEvent::DragOver { position } => {
                     let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
-                    let pos = render.px_to_pos((position.x as f32, position.y as f32));
+                    let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
                     editor_state.file_drag_hover(pos);
                 }
@@ -272,7 +272,7 @@ run off
                     };
 
                     let position: LogicalPosition<f32> = position.to_logical(render.scale_factor.into());
-                    let pos = render.px_to_pos((position.x as f32, position.y as f32));
+                    let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
                     editor_state.insert(pos, Token::Widget { id: 0, width: 5 }.into(), true);
                     let widget = SampleWidget::new(filepath);
