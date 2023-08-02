@@ -15,7 +15,7 @@ Instead of going there the most pragmatic way (i.e. making a web app, using web 
 - Code editor logic
   - Building the logic around editing code with multiple selections, etc., is quite challenging but fun on its own :P I decided that I might as well make this deep-dive, after I already touched on it with another hobby-project of mine: [ASCII recipes](https://asciirecip.es/)
 
-![](pics/drawing_waveforms_actually.png)
+![](pics/stuff_that_looks_like_live_code.png)
 
 **TODO list**
 

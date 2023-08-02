@@ -6,6 +6,10 @@ pub enum CodeToken {
     Widget { col: usize, id: usize, width: usize },
 }
 
+fn is_keyword(word: &str) -> bool {
+    word == "def"
+}
+
 pub fn syntax_highlight(data: &LineData) -> Vec<(usize, Vec<CodeToken>)> {
     data.lines()
         .iter()
@@ -21,9 +25,7 @@ pub fn syntax_highlight(data: &LineData) -> Vec<(usize, Vec<CodeToken>)> {
                 match cell {
                     Token::Widget { id, width } => {
                         if word.len() > 0 {
-                            let is_keyword = &word == "kelley";
-
-                            tokens.push(if is_keyword {
+                            tokens.push(if is_keyword(&word) {
                                 CodeToken::Keyword { col, text: word }
                             } else {
                                 CodeToken::Text { col, text: word }
@@ -43,9 +45,7 @@ pub fn syntax_highlight(data: &LineData) -> Vec<(usize, Vec<CodeToken>)> {
                     Token::Char(ch) => {
                         if ch == ' ' {
                             if word.len() > 0 {
-                                let is_keyword = &word == "kelley";
-
-                                tokens.push(if is_keyword {
+                                tokens.push(if is_keyword(&word) {
                                     CodeToken::Keyword { col, text: word }
                                 } else {
                                     CodeToken::Text { col, text: word }
@@ -71,9 +71,7 @@ pub fn syntax_highlight(data: &LineData) -> Vec<(usize, Vec<CodeToken>)> {
             }
 
             if word.len() > 0 {
-                let is_keyword = &word == "kelley";
-
-                tokens.push(if is_keyword {
+                tokens.push(if is_keyword(&word) {
                     CodeToken::Keyword { col, text: word }
                 } else {
                     CodeToken::Text { col, text: word }

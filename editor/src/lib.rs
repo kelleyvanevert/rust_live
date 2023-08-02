@@ -47,15 +47,18 @@ pub fn run() {
     let id_1 = widget_manager.add(Box::new(ColorSwatchWidget::new()));
 
     let linedata = LineData::from(
-        "A kelley wrote
-  some
-  code that' eventually
-  and bla bla bla bla bla
+        "def main = osc[midi-in] -> ( * low)
 
-run off
-  the screen
-  and bla bla bla
-",
+def bass = 
+
+def hp = osc(440, )
+
+def matrix = [
+  , , ,
+  , , ,
+  , , ,
+  , , ,
+]",
     )
     .with_widget_at_pos(
         Pos { row: 2, col: 12 },
