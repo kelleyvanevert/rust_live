@@ -293,11 +293,12 @@ run off
                     let position: LogicalPosition<f32> = position.to_logical(render.system.scale_factor.into());
                     let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
-                    let widget = SampleWidget::new(filepath);
-                    let width = widget.column_width();
-                    let id = widget_manager.add(Box::new(widget));
+                    if let Some(widget) = SampleWidget::new(filepath) {
+                        let width = widget.column_width();
+                        let id = widget_manager.add(Box::new(widget));
 
-                    editor_state.insert(pos, Token::Widget { id, width }.into(), true);
+                        editor_state.insert(pos, Token::Widget { id, width }.into(), true);
+                    }
                 }
                 _ => (),
             },
