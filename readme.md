@@ -26,8 +26,7 @@ Instead of going there the most pragmatic way (i.e. making a web app, using web 
 
 - Widgets
 
-  - [ ] Widget state + drawing pixels to the widget in editor
-  - [ ] Reading in sample + drawing waveform
+  - [ ] Refactor rendering pipeline / state
 
 - Language
 
