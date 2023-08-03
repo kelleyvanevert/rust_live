@@ -574,7 +574,7 @@ impl LineData {
         None
     }
 
-    pub fn hover(&self, pos: Pos<f32>) -> Option<Token> {
+    pub fn hover(&self, pos: Pos<f32>) -> Option<(Token, (f32, f32))> {
         if pos.row < 0.0 || pos.col < 0.0 {
             return None;
         }
@@ -590,7 +590,9 @@ impl LineData {
         for token in line {
             let w = token.width();
             if acc <= col && col < acc + w {
-                return Some(*token);
+                let px = (pos.col - acc as f32) / (w as f32);
+                let py = pos.row - row as f32;
+                return Some((*token, (px, py)));
             }
             acc += token.width();
         }

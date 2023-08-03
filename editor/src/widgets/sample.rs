@@ -11,7 +11,7 @@ struct Summary {
 
 pub struct SampleWidget {
     filepath: String,
-    hovering: bool,
+    hovering: Option<(f32, f32)>,
     samples: Option<Vec<f32>>,
     summary: RefCell<Option<Summary>>,
 }
@@ -20,7 +20,7 @@ impl SampleWidget {
     pub fn new(filepath: impl Into<String>) -> Self {
         let mut widget = Self {
             filepath: filepath.into(),
-            hovering: false,
+            hovering: None,
             samples: None,
             summary: RefCell::new(None),
         };
@@ -71,8 +71,8 @@ impl Widget for SampleWidget {
 
     fn event(&mut self, event: WidgetEvent) {
         match event {
-            WidgetEvent::Hover => self.hovering = true,
-            WidgetEvent::Unhover => self.hovering = false,
+            WidgetEvent::Hover { uv } => self.hovering = Some(uv),
+            WidgetEvent::Unhover => self.hovering = None,
         }
     }
 
@@ -82,7 +82,7 @@ impl Widget for SampleWidget {
                 pixel[0] = 0xff; // R
                 pixel[1] = 0x00; // G
                 pixel[2] = 0x00; // B
-                pixel[3] = 0x00; // A
+                pixel[3] = 0xff; // A
             }
             return;
         };
@@ -142,14 +142,14 @@ impl Widget for SampleWidget {
         });
 
         for pixel in frame.chunks_exact_mut(4) {
-            pixel[0] = 0xff; // R
-            pixel[1] = 0xff; // G
-            pixel[2] = 0xff; // B
-            pixel[3] = 0x00; // A
+            pixel[0] = 0xe5; // R
+            pixel[1] = 0xe5; // G
+            pixel[2] = 0xe5; // B
+            pixel[3] = 0xff; // A
         }
 
         let half = (height as f32) / 2.0;
-        let scale = half * (1.0 / summary.overall_max);
+        let scale = 0.85 * half * (1.0 / summary.overall_max);
 
         for x in 0..width {
             let (min, max, rms) = summary.samples_overview[x];
@@ -157,22 +157,39 @@ impl Widget for SampleWidget {
             let ymin = (min * scale + half).round() as usize;
             let ymax = (max * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame[(y * width + x) * 4 + 0] = 0xcc; // R
-                frame[(y * width + x) * 4 + 1] = 0xcc; // G
-                frame[(y * width + x) * 4 + 2] = 0xcc; // B
+                frame[(y * width + x) * 4 + 0] = 0xaa; // R
+                frame[(y * width + x) * 4 + 1] = 0xaa; // G
+                frame[(y * width + x) * 4 + 2] = 0xaa; // B
                 frame[(y * width + x) * 4 + 3] = 0xff; // A
             }
 
             let ymin = (-rms * scale + half).round() as usize;
             let ymax = (rms * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame[(y * width + x) * 4 + 0] = 0; // R
-                frame[(y * width + x) * 4 + 1] = 0; // G
-                frame[(y * width + x) * 4 + 2] = 0; // B
+                frame[(y * width + x) * 4 + 0] = 0x00; // R
+                frame[(y * width + x) * 4 + 1] = 0x00; // G
+                frame[(y * width + x) * 4 + 2] = 0x00; // B
                 frame[(y * width + x) * 4 + 3] = 0xff; // A
             }
         }
-        // let c = if self.hovering { 0x9a } else { 0xf0 };
+
+        if let Some(uv) = self.hovering {
+            let x = (uv.0 * width as f32)
+                .round()
+                .max(0.0)
+                .min(width as f32 - 2.0) as usize;
+
+            for y in 0..height {
+                frame[(y * width + x + 0) * 4 + 0] = 0x00; // R
+                frame[(y * width + x + 0) * 4 + 1] = 0x00; // G
+                frame[(y * width + x + 0) * 4 + 2] = 0x00; // B
+                frame[(y * width + x + 0) * 4 + 3] = 0xff; // A
+                frame[(y * width + x + 1) * 4 + 0] = 0x00; // R
+                frame[(y * width + x + 1) * 4 + 1] = 0x00; // G
+                frame[(y * width + x + 1) * 4 + 2] = 0x00; // B
+                frame[(y * width + x + 1) * 4 + 3] = 0xff; // A
+            }
+        }
     }
 }
 

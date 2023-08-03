@@ -10,10 +10,8 @@ mod widgets;
 
 use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
-use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 use widget::{Widget, WidgetManager};
-use widgets::color_swatch::ColorSwatchWidget;
 use widgets::sample::SampleWidget;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -268,13 +266,13 @@ def kick =  *= .1s",
                         } else {
                             editor_state.find_widget_at(render.system.px_to_pos_f(p))
                         };
-                        if let Some(id) = hovering_widget_id && w != hovering_widget_id {
+                        if let Some(id) = hovering_widget_id && w.map(|(id, _)| id) != hovering_widget_id {
                             widget_manager.unhover(id);
                         }
-                        if let Some(id) = w {
-                            widget_manager.hover(id);
+                        if let Some((id, uv)) = w {
+                            widget_manager.hover(id, uv);
                         }
-                        hovering_widget_id = w;
+                        hovering_widget_id = w.map(|(id, _)| id);
                     }
 
                     if let Some(id) = is_selecting {

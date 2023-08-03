@@ -21,7 +21,7 @@ pub trait Widget {
 
 #[derive(Debug, Clone, Copy)]
 pub enum WidgetEvent {
-    Hover, // TODO pos + sizing info
+    Hover { uv: (f32, f32) },
     Unhover,
 }
 
@@ -52,9 +52,9 @@ impl WidgetManager {
         }
     }
 
-    pub fn hover(&mut self, id: usize) {
+    pub fn hover(&mut self, id: usize, uv: (f32, f32)) {
         if let Some(widget) = self.widgets.get_mut(id) {
-            widget.event(WidgetEvent::Hover);
+            widget.event(WidgetEvent::Hover { uv });
         }
     }
 

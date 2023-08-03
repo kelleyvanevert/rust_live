@@ -44,7 +44,7 @@ impl Widget for ColorSwatchWidget {
 
     fn event(&mut self, event: WidgetEvent) {
         match event {
-            WidgetEvent::Hover => self.hovering = true,
+            WidgetEvent::Hover { .. } => self.hovering = true,
             WidgetEvent::Unhover => self.hovering = false,
         }
     }

@@ -122,9 +122,9 @@ impl EditorState {
         line_selections
     }
 
-    pub fn find_widget_at(&self, pos: Pos<f32>) -> Option<usize> {
+    pub fn find_widget_at(&self, pos: Pos<f32>) -> Option<(usize, (f32, f32))> {
         match self.linedata.hover(pos) {
-            Some(Token::Widget { id, .. }) => Some(id),
+            Some((Token::Widget { id, .. }, p)) => Some((id, p)),
             _ => None,
         }
     }
