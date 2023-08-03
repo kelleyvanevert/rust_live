@@ -119,8 +119,8 @@ impl WidgetsPass {
         for group in widget_instances.group_by(|a, b| a.0 == b.0) {
             let id = group[0].0;
             let (min_x, min_y, max_x, max_y) = group[0].1;
-            let width = (max_x - min_x).round() as usize;
-            let height = (max_y - min_y).round() as usize;
+            let width = (max_x - min_x).round() as usize * 2;
+            let height = (max_y - min_y).round() as usize * 2;
 
             let widget_texture = self.widget_textures.entry(id).or_insert_with(|| {
                 WidgetTexture::new(
