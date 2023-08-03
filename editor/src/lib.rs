@@ -10,6 +10,7 @@ mod widgets;
 
 use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant, SystemTime};
 use widget::{Widget, WidgetManager};
 use widgets::color_swatch::ColorSwatchWidget;
@@ -43,13 +44,17 @@ pub fn run() {
 
     let mut widget_manager = WidgetManager::new();
 
-    let id_0 = widget_manager.add(Box::new(ColorSwatchWidget::new()));
-    let id_1 = widget_manager.add(Box::new(ColorSwatchWidget::new()));
+    let id_0 = widget_manager.add(Box::new(SampleWidget::new(
+        "./res/samples/Abroxis - Extended Oneshot 019.wav",
+    )));
+    let id_1 = widget_manager.add(Box::new(SampleWidget::new("./res/samples/meii - Teag.wav")));
 
     let linedata = LineData::from(
-        "def main = osc[midi-in] -> ( * low)
+        "def beat = [..X. .X]
 
-def bass = 
+def main = sample_matrix%[midi.pitch.int] * fx + beat * kick
+
+def fx = lowpass{f = sin(4hz)} + select{, 10}
 
 def hp = osc(440, )
 
@@ -58,19 +63,20 @@ def matrix = [
   , , ,
   , , ,
   , , ,
-]",
+].map(_ *= .2s)
+
+def kick =  *= .1s",
     )
     .with_widget_at_pos(
-        Pos { row: 2, col: 12 },
+        Pos { row: 4, col: 40 },
         0,
         widget_manager.get_column_width(id_0).unwrap(),
     )
     .with_widget_at_pos(
-        Pos { row: 6, col: 7 },
+        Pos { row: 6, col: 18 },
         1,
         widget_manager.get_column_width(id_1).unwrap(),
-    )
-    .with_inserted(Pos { row: 0, col: 5 }, LineData::from("hi\nthere kelley "));
+    );
 
     let mut editor_state = EditorState::new().with_linedata(linedata);
 
@@ -299,12 +305,12 @@ def matrix = [
                     let position: LogicalPosition<f32> = position.to_logical(render.system.scale_factor.into());
                     let pos = render.system.px_to_pos((position.x as f32, position.y as f32));
 
-                    if let Some(widget) = SampleWidget::new(filepath) {
-                        let width = widget.column_width();
-                        let id = widget_manager.add(Box::new(widget));
+                    let filepath = filepath.as_path().to_str().unwrap();
+                    let widget = SampleWidget::new(filepath);
+                    let width = widget.column_width();
+                    let id = widget_manager.add(Box::new(widget));
 
-                        editor_state.insert(pos, Token::Widget { id, width }.into(), true);
-                    }
+                    editor_state.insert(pos, Token::Widget { id, width }.into(), true);
                 }
                 _ => (),
             },

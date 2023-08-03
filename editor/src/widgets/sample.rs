@@ -1,5 +1,5 @@
 use creak;
-use std::{cell::RefCell, path::PathBuf, time::Instant};
+use std::{cell::RefCell, time::Instant};
 
 use crate::widget::{Widget, WidgetEvent};
 
@@ -10,15 +10,33 @@ struct Summary {
 }
 
 pub struct SampleWidget {
-    filepath: PathBuf,
+    filepath: String,
     hovering: bool,
-    samples: Vec<f32>,
+    samples: Option<Vec<f32>>,
     summary: RefCell<Option<Summary>>,
 }
 
 impl SampleWidget {
-    pub fn new(filepath: PathBuf) -> Option<Self> {
-        let decoder = creak::Decoder::open(&filepath).ok()?;
+    pub fn new(filepath: impl Into<String>) -> Self {
+        let mut widget = Self {
+            filepath: filepath.into(),
+            hovering: false,
+            samples: None,
+            summary: RefCell::new(None),
+        };
+
+        widget.read();
+
+        widget
+    }
+
+    fn read(&mut self) {
+        let decoder = creak::Decoder::open(&self.filepath).ok();
+
+        let Some(decoder) = decoder else {
+            println!("Could not read audio file at: {:?}", self.filepath);
+            return;
+        };
 
         let info = decoder.info();
         println!(
@@ -28,25 +46,27 @@ impl SampleWidget {
             info.sample_rate()
         );
 
-        let mut samples = vec![];
+        self.samples = decoder.into_samples().ok().and_then(|iter| {
+            let mut samples = vec![];
 
-        // Dump all samples to stdout
-        for sample in decoder.into_samples().ok()? {
-            samples.push(sample.ok()?);
+            for sample in iter {
+                samples.push(sample.ok()?);
+            }
+
+            Some(samples)
+        });
+
+        if self.samples.is_some() {
+            println!("  READ :)");
+        } else {
+            println!("  error reading samples :(");
         }
-
-        Some(Self {
-            filepath,
-            hovering: false,
-            samples,
-            summary: RefCell::new(None),
-        })
     }
 }
 
 impl Widget for SampleWidget {
     fn column_width(&self) -> usize {
-        self.filepath.to_str().unwrap().len().min(7)
+        6
     }
 
     fn event(&mut self, event: WidgetEvent) {
@@ -57,11 +77,21 @@ impl Widget for SampleWidget {
     }
 
     fn draw(&self, frame: &mut [u8], width: usize, height: usize) {
+        let Some(samples) = &self.samples else {
+            for pixel in frame.chunks_exact_mut(4) {
+                pixel[0] = 0xff; // R
+                pixel[1] = 0x00; // G
+                pixel[2] = 0x00; // B
+                pixel[3] = 0x00; // A
+            }
+            return;
+        };
+
         let mut summary = self.summary.borrow_mut();
         let summary = summary.get_or_insert_with(|| {
             let t0 = Instant::now();
 
-            let num_samples = self.samples.len();
+            let num_samples = samples.len();
             let samples_per_pixel = num_samples / width;
 
             // (min, max, rms)
@@ -74,7 +104,7 @@ impl Widget for SampleWidget {
             let mut rms_range = vec![];
 
             for i in 0..num_samples {
-                let sample = self.samples[i];
+                let sample = samples[i];
                 rms_range.push(sample);
 
                 if sample < min {
