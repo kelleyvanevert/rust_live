@@ -154,6 +154,13 @@ def kick =  *= .1s",
                             MoveVariant::ByToken
                         });
                     }
+                    (Key::ArrowUp | Key::ArrowDown, ElementState::Pressed) if meta_or_ctrl_pressed && alt_pressed => {
+                        editor_state.add_caret_vertically(match logical_key.clone() {
+                            Key::ArrowUp => Direction::Up,
+                            Key::ArrowDown => Direction::Down,
+                            _ => unreachable!()
+                        });
+                    }
                     (Key::ArrowUp | Key::ArrowRight | Key::ArrowDown | Key::ArrowLeft, ElementState::Pressed) => {
                         editor_state.move_caret(
                             match logical_key.clone() {

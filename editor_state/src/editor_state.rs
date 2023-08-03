@@ -346,6 +346,30 @@ impl EditorState {
         self.normalize_selections(Some(id), None);
     }
 
+    // Not exactly what VS code does tho, because VS code also remembers from which caret this operation started, and uses that caret's desired_col for subsequent added carets.
+    pub fn add_caret_vertically(&mut self, dir: Direction) {
+        assert!(dir == Direction::Up || dir == Direction::Down);
+
+        let mut carets_to_add = vec![];
+
+        for s in &self.selections {
+            let (caret, _) = self.linedata.calculate_caret_move(
+                s.caret,
+                Some(s.caret.col),
+                dir,
+                MoveVariant::ByToken,
+            );
+
+            carets_to_add.push(caret);
+        }
+
+        for caret in carets_to_add {
+            self.add_caret(caret);
+        }
+
+        self.normalize_selections(None, Some(dir))
+    }
+
     pub fn move_caret(&mut self, dir: Direction, selecting: bool, variant: MoveVariant) {
         for s in &mut self.selections {
             self.linedata
