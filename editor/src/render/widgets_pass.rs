@@ -133,7 +133,7 @@ impl WidgetsPass {
                 )
             });
 
-            widget_manager.draw(id, widget_texture.frame_mut(), width, height);
+            widget_manager.draw(id, widget_texture);
 
             queue.write_texture(
                 // Tells wgpu where to copy the pixel data
@@ -333,5 +333,25 @@ impl WidgetTexture {
     /// colours directly into it.
     pub fn frame(&self) -> &[u8] {
         &self.pixels
+    }
+
+    pub fn width(&self) -> usize {
+        self.size.width as usize
+    }
+
+    pub fn height(&self) -> usize {
+        self.size.height as usize
+    }
+
+    pub fn set_pixel(&mut self, x: usize, y: usize, rgba: &[u8; 4]) {
+        let offset = (y * self.width() + x) * 4;
+
+        self.pixels[offset..(offset + 4)].copy_from_slice(rgba);
+    }
+
+    pub fn clear(&mut self, rgba: &[u8; 4]) {
+        for pixel in self.pixels.chunks_exact_mut(4) {
+            pixel.copy_from_slice(rgba);
+        }
     }
 }

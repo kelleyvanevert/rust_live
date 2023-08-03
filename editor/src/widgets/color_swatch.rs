@@ -1,7 +1,10 @@
 use palette::{FromColor, Hsla, IntoColor, Lcha, Srgba};
 // use std::time::Instant;
 
-use crate::widget::{Widget, WidgetEvent};
+use crate::{
+    render::WidgetTexture,
+    widget::{Widget, WidgetEvent},
+};
 
 pub struct ColorSwatchWidget {
     hovering: bool,
@@ -54,27 +57,20 @@ impl Widget for ColorSwatchWidget {
         }
     }
 
-    fn draw(&self, frame: &mut [u8], width: usize, height: usize) {
+    fn draw(&self, frame: &mut WidgetTexture) {
         // let t = Instant::elapsed(&self.t0);
         // t.as_secs();
 
         if self.hovering {
-            for pixel in frame.chunks_exact_mut(4) {
-                pixel[0] = 0; // R
-                pixel[1] = 0; // G
-                pixel[2] = 0; // B
-                pixel[3] = 0xff; // A
-            }
+            frame.clear(&[0, 0, 0, 0xff]);
         } else {
-            for y in 0..height {
-                for x in 0..width {
-                    let [r, g, b, a] = self.colors
-                        [((x as f32 / width as f32) * (self.colors.len() as f32)).floor() as usize];
+            for y in 0..frame.height() {
+                for x in 0..frame.width() {
+                    let rgba = self.colors[((x as f32 / frame.width() as f32)
+                        * (self.colors.len() as f32))
+                        .floor() as usize];
 
-                    frame[(y * width + x) * 4 + 0] = r; // R
-                    frame[(y * width + x) * 4 + 1] = g; // G
-                    frame[(y * width + x) * 4 + 2] = b; // B
-                    frame[(y * width + x) * 4 + 3] = a; // A
+                    frame.set_pixel(x, y, &rgba);
                 }
             }
         }

@@ -1,5 +1,7 @@
 use live_editor_state::WidgetInfo;
 
+use crate::render::WidgetTexture;
+
 pub trait Widget {
     fn kind(&self) -> &'static str;
 
@@ -12,7 +14,7 @@ pub trait Widget {
     fn event(&mut self, _event: WidgetEvent) {}
 
     // Draw to pixel frame
-    fn draw(&self, _frame: &mut [u8], _width: usize, _height: usize) {}
+    fn draw(&self, _frame: &mut WidgetTexture) {}
 
     // When the file is saved in "bundled" mode, this method is called
     fn bundle_resources(&self) {}
@@ -49,9 +51,9 @@ impl WidgetManager {
         WidgetInfo { kind, id, width }
     }
 
-    pub fn draw(&mut self, id: usize, frame: &mut [u8], width: usize, height: usize) {
+    pub fn draw(&mut self, id: usize, frame: &mut WidgetTexture) {
         if let Some(widget) = self.widgets.get_mut(id) {
-            widget.draw(frame, width, height);
+            widget.draw(frame);
         }
     }
 

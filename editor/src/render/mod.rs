@@ -7,6 +7,8 @@ mod system;
 mod widget_vertex;
 mod widgets_pass;
 
+pub use widgets_pass::WidgetTexture;
+
 use crate::widget::WidgetManager;
 
 use self::{

@@ -162,9 +162,9 @@ impl<'a> CodePass<'a> {
                             id,
                             (
                                 x_start,
-                                y + 3.0 / sf,
+                                y + 4.0 / sf,
                                 x_end,
-                                y + system.char_size.1 / sf - 3.0 / sf,
+                                y + system.char_size.1 / sf - 4.0 / sf,
                             ),
                         ));
                     }

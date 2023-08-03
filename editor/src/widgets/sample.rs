@@ -1,7 +1,10 @@
 use creak;
 use std::{cell::RefCell, time::Instant};
 
-use crate::widget::{Widget, WidgetEvent};
+use crate::{
+    render::WidgetTexture,
+    widget::{Widget, WidgetEvent},
+};
 
 struct Summary {
     overall_max: f32,
@@ -79,14 +82,12 @@ impl Widget for SampleWidget {
         }
     }
 
-    fn draw(&self, frame: &mut [u8], width: usize, height: usize) {
+    fn draw(&self, frame: &mut WidgetTexture) {
+        let width = frame.width();
+        let height = frame.height();
+
         let Some(samples) = &self.samples else {
-            for pixel in frame.chunks_exact_mut(4) {
-                pixel[0] = 0xff; // R
-                pixel[1] = 0x00; // G
-                pixel[2] = 0x00; // B
-                pixel[3] = 0xff; // A
-            }
+            frame.clear(&[0xff, 0x00, 0x00, 0xff]);
             return;
         };
 
@@ -143,12 +144,7 @@ impl Widget for SampleWidget {
             }
         });
 
-        for pixel in frame.chunks_exact_mut(4) {
-            pixel[0] = 0xe5; // R
-            pixel[1] = 0xe5; // G
-            pixel[2] = 0xe5; // B
-            pixel[3] = 0xff; // A
-        }
+        frame.clear(&[0xe5, 0xe5, 0xe5, 0xff]);
 
         let half = (height as f32) / 2.0;
         let scale = 0.85 * half * (1.0 / summary.overall_max);
@@ -159,39 +155,48 @@ impl Widget for SampleWidget {
             let ymin = (min * scale + half).round() as usize;
             let ymax = (max * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame[(y * width + x) * 4 + 0] = 0xaa; // R
-                frame[(y * width + x) * 4 + 1] = 0xaa; // G
-                frame[(y * width + x) * 4 + 2] = 0xaa; // B
-                frame[(y * width + x) * 4 + 3] = 0xff; // A
+                frame.set_pixel(x, y, &[0xaa, 0xaa, 0xaa, 0xff]);
             }
 
             let ymin = (-rms * scale + half).round() as usize;
             let ymax = (rms * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame[(y * width + x) * 4 + 0] = 0x00; // R
-                frame[(y * width + x) * 4 + 1] = 0x00; // G
-                frame[(y * width + x) * 4 + 2] = 0x00; // B
-                frame[(y * width + x) * 4 + 3] = 0xff; // A
+                frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
             }
         }
 
-        if let Some(uv) = self.hovering {
-            let x = (uv.0 * width as f32)
-                .round()
-                .max(0.0)
-                .min(width as f32 - 2.0) as usize;
+        let empty: [u8; 4] = [0, 0, 0, 0];
+        // top left
+        frame.set_pixel(0, 0, &empty);
+        frame.set_pixel(1, 0, &empty);
+        frame.set_pixel(2, 0, &empty);
+        frame.set_pixel(0, 1, &empty);
+        frame.set_pixel(1, 1, &empty);
+        frame.set_pixel(0, 2, &empty);
 
-            for y in 0..height {
-                frame[(y * width + x + 0) * 4 + 0] = 0x00; // R
-                frame[(y * width + x + 0) * 4 + 1] = 0x00; // G
-                frame[(y * width + x + 0) * 4 + 2] = 0x00; // B
-                frame[(y * width + x + 0) * 4 + 3] = 0xff; // A
-                frame[(y * width + x + 1) * 4 + 0] = 0x00; // R
-                frame[(y * width + x + 1) * 4 + 1] = 0x00; // G
-                frame[(y * width + x + 1) * 4 + 2] = 0x00; // B
-                frame[(y * width + x + 1) * 4 + 3] = 0xff; // A
-            }
-        }
+        // top right
+        frame.set_pixel(width - 1 - 0, 0, &empty);
+        frame.set_pixel(width - 1 - 1, 0, &empty);
+        frame.set_pixel(width - 1 - 2, 0, &empty);
+        frame.set_pixel(width - 1 - 0, 1, &empty);
+        frame.set_pixel(width - 1 - 1, 1, &empty);
+        frame.set_pixel(width - 1 - 0, 2, &empty);
+
+        // bottom left
+        frame.set_pixel(0, height - 1 - 0, &empty);
+        frame.set_pixel(1, height - 1 - 0, &empty);
+        frame.set_pixel(2, height - 1 - 0, &empty);
+        frame.set_pixel(0, height - 1 - 1, &empty);
+        frame.set_pixel(1, height - 1 - 1, &empty);
+        frame.set_pixel(0, height - 1 - 2, &empty);
+
+        // bottom right
+        frame.set_pixel(width - 1 - 0, height - 1 - 0, &empty);
+        frame.set_pixel(width - 1 - 1, height - 1 - 0, &empty);
+        frame.set_pixel(width - 1 - 2, height - 1 - 0, &empty);
+        frame.set_pixel(width - 1 - 0, height - 1 - 1, &empty);
+        frame.set_pixel(width - 1 - 1, height - 1 - 1, &empty);
+        frame.set_pixel(width - 1 - 0, height - 1 - 2, &empty);
     }
 }
 
