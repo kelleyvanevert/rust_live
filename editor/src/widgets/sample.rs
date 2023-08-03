@@ -144,7 +144,7 @@ impl Widget for SampleWidget {
             }
         });
 
-        frame.clear(&[0x00, 0x00, 0x00, 0xff]);
+        frame.clear(&[0xe5, 0xe5, 0xe5, 0xff]);
 
         let half = (height as f32) / 2.0;
         let scale = 0.85 * half * (1.0 / summary.overall_max);
@@ -155,13 +155,13 @@ impl Widget for SampleWidget {
             let ymin = (min * scale + half).round() as usize;
             let ymax = (max * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame.set_pixel(x, y, &[0x77, 0x77, 0x77, 0xff]);
+                frame.set_pixel(x, y, &[0xbb, 0xbb, 0xbb, 0xff]);
             }
 
             let ymin = (-rms * scale + half).round() as usize;
             let ymax = (rms * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame.set_pixel(x, y, &[0xff, 0xff, 0xff, 0xff]);
+                frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
             }
         }
 
