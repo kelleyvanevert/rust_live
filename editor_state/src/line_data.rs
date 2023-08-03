@@ -3,16 +3,23 @@ use debug_unreachable::debug_unreachable;
 use crate::{Direction, Pos, Range, Selection};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct WidgetInfo {
+    pub kind: &'static str,
+    pub id: usize,
+    pub width: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Token {
     Char(char),
-    Widget { id: usize, width: usize },
+    Widget(WidgetInfo),
 }
 
 impl Token {
     pub fn width(&self) -> usize {
         match self {
             Token::Char(_) => 1,
-            Token::Widget { width, .. } => *width,
+            Token::Widget(WidgetInfo { width, .. }) => *width,
         }
     }
 
@@ -91,8 +98,8 @@ impl LineData {
         LineData(vec![vec![]])
     }
 
-    pub fn with_widget_at_pos(mut self, pos: Pos, id: usize, width: usize) -> Self {
-        self.insert(pos, Token::Widget { id, width }.into());
+    pub fn with_widget_at_pos(mut self, pos: Pos, widget_info: WidgetInfo) -> Self {
+        self.insert(pos, Token::Widget(widget_info).into());
         self
     }
 
@@ -695,7 +702,7 @@ impl ToString for LineData {
                 line.iter()
                     .map(|t| match t {
                         Token::Char(ch) => ch.to_string(),
-                        Token::Widget { .. } => "[WIDGET]".to_string(),
+                        Token::Widget(WidgetInfo { kind, id, .. }) => format!("{}#{}", kind, id),
                     })
                     .collect::<Vec<_>>()
                     .join("")

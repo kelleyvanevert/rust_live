@@ -1,4 +1,4 @@
-use live_editor_state::{LineData, Token};
+use live_editor_state::{LineData, Token, WidgetInfo};
 
 pub enum CodeToken {
     Keyword { col: usize, text: String },
@@ -23,7 +23,7 @@ pub fn syntax_highlight(data: &LineData) -> Vec<(usize, Vec<CodeToken>)> {
 
             for &cell in line.iter() {
                 match cell {
-                    Token::Widget { id, width } => {
+                    Token::Widget(WidgetInfo { id, width, .. }) => {
                         if word.len() > 0 {
                             tokens.push(if is_keyword(&word) {
                                 CodeToken::Keyword { col, text: word }

@@ -4,6 +4,7 @@ use tinyset::SetUsize;
 
 use crate::{
     selection::Selection, Direction, EditResult, LineData, MoveVariant, Pos, Range, Token,
+    WidgetInfo,
 };
 
 pub struct LineSelection {
@@ -124,7 +125,7 @@ impl EditorState {
 
     pub fn find_widget_at(&self, pos: Pos<f32>) -> Option<(usize, (f32, f32))> {
         match self.linedata.hover(pos) {
-            Some((Token::Widget { id, .. }, p)) => Some((id, p)),
+            Some((Token::Widget(WidgetInfo { id, .. }), p)) => Some((id, p)),
             _ => None,
         }
     }

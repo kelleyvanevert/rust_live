@@ -1,4 +1,8 @@
+use live_editor_state::WidgetInfo;
+
 pub trait Widget {
+    fn kind(&self) -> &'static str;
+
     // Decide how big it should be in the code editor (only called once)
     fn column_width(&self) -> usize {
         5
@@ -34,16 +38,15 @@ impl WidgetManager {
         Self { widgets: vec![] }
     }
 
-    pub fn add(&mut self, widget: Box<dyn Widget>) -> usize {
+    pub fn add(&mut self, widget: Box<dyn Widget>) -> WidgetInfo {
         let id = self.widgets.len();
+
+        let width = widget.column_width();
+        let kind = widget.kind();
 
         self.widgets.push(widget);
 
-        id
-    }
-
-    pub fn get_column_width(&self, id: usize) -> Option<usize> {
-        self.widgets.get(id).map(|w| w.column_width())
+        WidgetInfo { kind, id, width }
     }
 
     pub fn draw(&mut self, id: usize, frame: &mut [u8], width: usize, height: usize) {

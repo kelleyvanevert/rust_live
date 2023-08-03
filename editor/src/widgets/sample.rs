@@ -4,7 +4,6 @@ use std::{cell::RefCell, time::Instant};
 use crate::widget::{Widget, WidgetEvent};
 
 struct Summary {
-    samples_per_pixel: usize,
     overall_max: f32,
     samples_overview: Vec<(f32, f32, f32)>,
 }
@@ -65,6 +64,10 @@ impl SampleWidget {
 }
 
 impl Widget for SampleWidget {
+    fn kind(&self) -> &'static str {
+        "sample"
+    }
+
     fn column_width(&self) -> usize {
         6
     }
@@ -136,7 +139,6 @@ impl Widget for SampleWidget {
 
             Summary {
                 overall_max: overall_max.max(-overall_min),
-                samples_per_pixel,
                 samples_overview,
             }
         });

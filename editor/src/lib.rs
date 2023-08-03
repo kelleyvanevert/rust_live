@@ -11,7 +11,7 @@ mod widgets;
 use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
 use std::time::{Duration, Instant, SystemTime};
-use widget::{Widget, WidgetManager};
+use widget::WidgetManager;
 use widgets::sample::SampleWidget;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
@@ -42,10 +42,10 @@ pub fn run() {
 
     let mut widget_manager = WidgetManager::new();
 
-    let id_0 = widget_manager.add(Box::new(SampleWidget::new(
+    let w0 = widget_manager.add(Box::new(SampleWidget::new(
         "./res/samples/Abroxis - Extended Oneshot 019.wav",
     )));
-    let id_1 = widget_manager.add(Box::new(SampleWidget::new("./res/samples/meii - Teag.wav")));
+    let w1 = widget_manager.add(Box::new(SampleWidget::new("./res/samples/meii - Teag.wav")));
 
     let linedata = LineData::from(
         "def beat = [..X. .X]
@@ -65,16 +65,8 @@ def matrix = [
 
 def kick =  *= .1s",
     )
-    .with_widget_at_pos(
-        Pos { row: 4, col: 40 },
-        0,
-        widget_manager.get_column_width(id_0).unwrap(),
-    )
-    .with_widget_at_pos(
-        Pos { row: 6, col: 18 },
-        1,
-        widget_manager.get_column_width(id_1).unwrap(),
-    );
+    .with_widget_at_pos(Pos { row: 4, col: 40 }, w0)
+    .with_widget_at_pos(Pos { row: 6, col: 18 }, w1);
 
     let mut editor_state = EditorState::new().with_linedata(linedata);
 
@@ -312,10 +304,9 @@ def kick =  *= .1s",
 
                     let filepath = filepath.as_path().to_str().unwrap();
                     let widget = SampleWidget::new(filepath);
-                    let width = widget.column_width();
-                    let id = widget_manager.add(Box::new(widget));
+                    let widget_info = widget_manager.add(Box::new(widget));
 
-                    editor_state.insert(pos, Token::Widget { id, width }.into(), true);
+                    editor_state.insert(pos, Token::Widget(widget_info).into(), true);
                 }
                 _ => (),
             },

@@ -10,6 +10,7 @@ pub struct ColorSwatchWidget {
 }
 
 impl ColorSwatchWidget {
+    #[allow(unused)]
     pub fn new() -> Self {
         let my_rgb = Srgba::new(0.8, 0.3, 0.3, 1.0);
 
@@ -38,6 +39,10 @@ impl ColorSwatchWidget {
 }
 
 impl Widget for ColorSwatchWidget {
+    fn kind(&self) -> &'static str {
+        "color"
+    }
+
     fn column_width(&self) -> usize {
         5
     }
