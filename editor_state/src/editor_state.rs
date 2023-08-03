@@ -129,61 +129,28 @@ impl EditorState {
         }
     }
 
-    fn mk_selection(&mut self, caret: Pos) -> (usize, Selection) {
-        debug_assert_eq!(caret, self.linedata.snap(caret));
-
-        let id = self.next_selection_id;
-
-        let selection = Selection {
-            id,
-            caret,
-            anchor: None,
-            desired_col: None,
-        };
-
-        self.next_selection_id = id + 1;
-
-        (id, selection)
+    fn selection(&mut self) -> SelectionBuilder<NoCaret> {
+        SelectionBuilder::new(self)
     }
 
     pub fn add_caret(&mut self, pos: Pos) -> usize {
-        let pos = self.linedata.snap(pos);
-        let (id, selection) = self.mk_selection(pos);
-
-        self.selections.push(selection);
-        self.normalize_selections(Some(id), None); // ??
-
-        id
-    }
-
-    pub fn add_selection(&mut self, range: Range) -> usize {
-        let pos = self.linedata.snap(range.end);
-        let (id, mut selection) = self.mk_selection(pos);
-        selection.anchor = Some(range.start);
-
-        self.selections.push(selection);
-        self.normalize_selections(Some(id), None); // ??
-
-        id
+        let caret = self.linedata.snap(pos);
+        self.selection().caret(caret).add()
     }
 
     pub fn set_single_caret(&mut self, pos: Pos) -> usize {
-        let pos = self.linedata.snap(pos);
-        let (id, selection) = self.mk_selection(pos);
-
-        self.selections = vec![selection];
-
-        id
+        let caret = self.linedata.snap(pos);
+        self.selection().caret(caret).set_only()
     }
 
     pub fn select_all(&mut self) -> usize {
-        let (id, mut selection) = self.mk_selection((0, 0).into());
-        selection.anchor = Some((0, 0).into());
-        selection.caret = self.linedata.end();
-
-        self.selections = vec![selection];
-
-        id
+        let end = self.linedata.end();
+        self.selection()
+            .for_range(Range {
+                start: (0, 0).into(),
+                end,
+            })
+            .set_only()
     }
 
     /**
@@ -247,7 +214,7 @@ impl EditorState {
                         search_from = found_range.end;
                         // continue search for next
                     } else {
-                        self.add_selection(found_range);
+                        self.selection().for_range(found_range).add();
                         break;
                     }
                 } else {
@@ -346,25 +313,27 @@ impl EditorState {
         self.normalize_selections(Some(id), None);
     }
 
-    // Not exactly what VS code does tho, because VS code also remembers from which caret this operation started, and uses that caret's desired_col for subsequent added carets.
     pub fn add_caret_vertically(&mut self, dir: Direction) {
         assert!(dir == Direction::Up || dir == Direction::Down);
 
         let mut carets_to_add = vec![];
 
         for s in &self.selections {
-            let (caret, _) = self.linedata.calculate_caret_move(
+            let (caret, desired_col) = self.linedata.calculate_caret_move(
                 s.caret,
-                Some(s.caret.col),
+                s.desired_col,
                 dir,
                 MoveVariant::ByToken,
             );
 
-            carets_to_add.push(caret);
+            carets_to_add.push((caret, desired_col));
         }
 
-        for caret in carets_to_add {
-            self.add_caret(caret);
+        for (caret, desired_col) in carets_to_add {
+            self.selection()
+                .caret(caret)
+                .with_desired_col(desired_col)
+                .add();
         }
 
         self.normalize_selections(None, Some(dir))
@@ -541,5 +510,114 @@ impl EditorState {
 
             self.remove(s.range());
         }
+    }
+}
+
+struct Caret(Pos);
+struct NoCaret;
+
+struct SelectionBuilder<'a, C> {
+    state: &'a mut EditorState,
+    caret: C,
+    anchor: Option<Pos>,
+    desired_col: Option<i32>,
+}
+
+impl<'a> SelectionBuilder<'a, NoCaret> {
+    fn new(state: &'a mut EditorState) -> Self {
+        Self {
+            state,
+            caret: NoCaret,
+            anchor: None,
+            desired_col: None,
+        }
+    }
+}
+
+#[allow(unused)]
+impl<'a, C> SelectionBuilder<'a, C> {
+    fn with_anchor(mut self, anchor: Option<Pos>) -> Self {
+        self.anchor = anchor;
+        self
+    }
+
+    fn anchor(mut self, anchor: Pos) -> Self {
+        self.anchor = Some(anchor);
+        self
+    }
+
+    fn no_anchor(mut self) -> Self {
+        self.anchor = None;
+        self
+    }
+
+    fn with_desired_col(mut self, desired_col: Option<i32>) -> Self {
+        self.desired_col = desired_col;
+        self
+    }
+
+    fn desired_col(mut self, col: i32) -> Self {
+        self.desired_col = Some(col);
+        self
+    }
+
+    fn no_desired_col(mut self) -> Self {
+        self.desired_col = None;
+        self
+    }
+}
+
+impl<'a> SelectionBuilder<'a, NoCaret> {
+    fn for_range(self, range: Range) -> SelectionBuilder<'a, Caret> {
+        let Self {
+            state, desired_col, ..
+        } = self;
+
+        SelectionBuilder {
+            state,
+            anchor: Some(range.start),
+            caret: Caret(range.end),
+            desired_col,
+        }
+    }
+
+    fn caret(self, caret: Pos) -> SelectionBuilder<'a, Caret> {
+        let Self {
+            state,
+            anchor,
+            desired_col,
+            ..
+        } = self;
+
+        SelectionBuilder {
+            state,
+            anchor,
+            caret: Caret(caret),
+            desired_col,
+        }
+    }
+}
+
+impl<'a> SelectionBuilder<'a, Caret> {
+    fn add(self) -> usize {
+        let id = self.state.next_selection_id;
+
+        let selection = Selection {
+            id,
+            caret: self.caret.0,
+            anchor: self.anchor,
+            desired_col: self.desired_col,
+        };
+
+        self.state.next_selection_id += 1;
+
+        self.state.selections.push(selection);
+
+        id
+    }
+
+    fn set_only(self) -> usize {
+        self.state.selections = vec![];
+        self.add()
     }
 }
