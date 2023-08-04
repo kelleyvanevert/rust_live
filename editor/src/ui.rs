@@ -29,7 +29,10 @@ pub enum WidgetEvent {
         alt: bool,
         meta_or_ctrl: bool,
     },
-    Release,
+    Release {
+        double: bool,
+        // todo add more
+    },
     MouseUp,
 }
 

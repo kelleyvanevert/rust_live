@@ -4,6 +4,13 @@ use std::{cell::RefCell, time::Instant};
 
 use crate::{render::WidgetTexture, ui::WidgetEvent, widget::Widget};
 
+struct Theme {
+    background: [u8; 4],
+    wave: [u8; 4],
+    rms: [u8; 4],
+    line: [u8; 4],
+}
+
 struct Summary {
     overall_max: f32,
     samples_overview: Vec<(f32, f32, f32)>,
@@ -11,6 +18,7 @@ struct Summary {
 
 pub struct SampleWidget {
     filepath: Option<String>,
+    selected: bool,
     hovering: Option<f32>, // x within widget
     samples: Option<Vec<f32>>,
     summary: RefCell<Option<Summary>>,
@@ -20,6 +28,7 @@ impl SampleWidget {
     pub fn new(filepath: impl Into<String>) -> Self {
         let mut widget = Self {
             filepath: None,
+            selected: false,
             hovering: None,
             samples: None,
             summary: RefCell::new(None),
@@ -84,6 +93,9 @@ impl Widget for SampleWidget {
                 self.hovering = Some((mouse.0 - bounds.0) * 2.0)
             }
             WidgetEvent::Unhover => self.hovering = None,
+            WidgetEvent::MouseDown { .. } => {
+                self.selected = true;
+            }
             WidgetEvent::Press { double, .. } => {
                 if double && let Some(filepath) = FileDialog::new()
                     .add_filter("audio", &["wav", "mp3", "ogg", "flac"])
@@ -92,11 +104,14 @@ impl Widget for SampleWidget {
                 {
                     let filepath = filepath.as_path().to_str().unwrap();
                     self.read(filepath.into());
-
-                    return true;
                 }
 
                 return false;
+            }
+            WidgetEvent::Release { double } => {
+                if !double {
+                    self.selected = false;
+                }
             }
             _ => {}
         }
@@ -168,7 +183,23 @@ impl Widget for SampleWidget {
             }
         });
 
-        frame.clear(&[0xe5, 0xe5, 0xe5, 0xff]);
+        let theme = if self.selected {
+            Theme {
+                background: [0x00, 0x00, 0x00, 0xff],
+                wave: [0xaa, 0xaa, 0xaa, 0xff],
+                rms: [0xe5, 0xe5, 0xe5, 0xff],
+                line: [0xe5, 0xe5, 0xe5, 0xff],
+            }
+        } else {
+            Theme {
+                background: [0xe5, 0xe5, 0xe5, 0xff],
+                wave: [0x99, 0x99, 0x99, 0xff],
+                rms: [0x00, 0x00, 0x00, 0xff],
+                line: [0x00, 0x00, 0x00, 0xff],
+            }
+        };
+
+        frame.clear(&theme.background);
 
         let half = (height as f32) / 2.0;
         let scale = 0.85 * half * (1.0 / summary.overall_max);
@@ -179,20 +210,20 @@ impl Widget for SampleWidget {
             let ymin = (min * scale + half).round() as usize;
             let ymax = (max * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame.set_pixel(x, y, &[0xbb, 0xbb, 0xbb, 0xff]);
+                frame.set_pixel(x, y, &theme.wave);
             }
 
             let ymin = (-rms * scale + half).round() as usize;
             let ymax = (rms * scale + half).round() as usize;
             for y in ymin..ymax {
-                frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
+                frame.set_pixel(x, y, &theme.rms);
             }
         }
 
         if let Some(x) = self.hovering {
             let x = (x.round() as usize).max(0).min(width - 2);
             for y in 0..height {
-                frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
+                frame.set_pixel(x, y, &theme.line);
             }
         }
 

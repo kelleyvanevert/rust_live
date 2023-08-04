@@ -237,7 +237,7 @@ pub fn run() {
 
                             if let Some(builder) = &mut curr_press && !builder.canceled_double {
                                 println!("ms: {:?}", builder.started_at.elapsed().as_millis());
-                                builder.has_fired = true;
+                                builder.has_fired = Some(true);
                                 let _ = proxy.send_event(WidgetEvent::Press {
                                     double: true,
                                     mouse,
@@ -279,8 +279,8 @@ pub fn run() {
                     if let Some(builder) = &mut curr_press {
                         builder.dragged(mouse);
 
-                        if builder.canceled_double && !builder.has_fired {
-                            builder.has_fired = true;
+                        if builder.canceled_double && builder.has_fired.is_none() {
+                            builder.has_fired = Some(false);
                             let _ = proxy.send_event(WidgetEvent::Press {
                                 double: false,
                                 mouse,
@@ -359,9 +359,10 @@ pub fn run() {
             }
             winit::event::Event::MainEventsCleared => {
                 if let Some(mouse) = ctx.mouse_at {
-                    if let Some(builder) = &curr_press {
+                    if let Some(builder) = &mut curr_press {
                         if builder.reached_double_press_timeout() {
-                            if !builder.has_fired {
+                            if builder.has_fired.is_none() {
+                                builder.has_fired = Some(false);
                                 let _ = proxy.send_event(WidgetEvent::Press {
                                     double: false,
                                     mouse,
@@ -373,8 +374,8 @@ pub fn run() {
                                 });
                             }
 
-                            if builder.has_released() {
-                                let _ = proxy.send_event(WidgetEvent::Release);
+                            if let Some(double) = builder.has_fired && builder.has_released() {
+                                let _ = proxy.send_event(WidgetEvent::Release { double });
                                 curr_press = None;
                             }
                         }
@@ -528,7 +529,7 @@ def kick =  *= .1s",
                 let press = self.hovering_widget(renderer, mouse);
 
                 if let Some(id) = self.pressing_widget_id && press.map(|(id, _, _)| id) != self.pressing_widget_id {
-                    self.widget_manager.event(id, WidgetEvent::Release);
+                    self.widget_manager.event(id, WidgetEvent::Release { double });
                 }
                 if let Some((id, bounds, _)) = press {
                     self.widget_manager.event(id, event.child_relative(bounds));
@@ -540,7 +541,7 @@ def kick =  *= .1s",
                 println!("editor:: mouse up");
                 self.is_selecting = None;
             }
-            WidgetEvent::Release => {
+            WidgetEvent::Release { .. } => {
                 // hmm, can't sent this to the widget w/o coords..
                 println!("editor:: release");
             }
@@ -561,7 +562,7 @@ struct PressEventBuilder {
     started_at: Instant,
     released_at: Option<Instant>,
     canceled_double: bool,
-    has_fired: bool,
+    has_fired: Option<bool>, // false = single, true = double,
 
     mouse: (f32, f32),
     right_click: bool,
@@ -573,7 +574,7 @@ impl PressEventBuilder {
             started_at: Instant::now(),
             released_at: None,
             canceled_double: false,
-            has_fired: false,
+            has_fired: None,
 
             mouse,
             right_click,
@@ -581,7 +582,7 @@ impl PressEventBuilder {
     }
 
     fn dragged(&mut self, mouse: (f32, f32)) {
-        if !self.has_fired && dist(self.mouse, mouse) >= PRESS_CANCEL_DRAG_DIST {
+        if self.has_fired.is_none() && dist(self.mouse, mouse) >= PRESS_CANCEL_DRAG_DIST {
             self.canceled_double = true;
         }
     }
