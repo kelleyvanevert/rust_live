@@ -26,18 +26,18 @@ use winit::{
 
 struct Context {
     mouse_at: Option<(f32, f32)>,
-    shift_pressed: bool,
-    alt_pressed: bool,
-    meta_or_ctrl_pressed: bool,
+    shift: bool,
+    alt: bool,
+    meta_or_ctrl: bool,
 }
 
 impl Context {
     fn new() -> Self {
         Self {
             mouse_at: None,
-            shift_pressed: false,
-            alt_pressed: false,
-            meta_or_ctrl_pressed: false,
+            shift: false,
+            alt: false,
+            meta_or_ctrl: false,
         }
     }
 }
@@ -104,7 +104,7 @@ pub fn run() {
                     //     }
                     // }
                     (Key::Tab, ElementState::Pressed) => {
-                        if ctx.shift_pressed {
+                        if ctx.shift {
                             editor.editor_state.untab();
                         } else {
                             editor.editor_state.tab();
@@ -117,16 +117,16 @@ pub fn run() {
                         editor.editor_state.write("\n");
                     }
                     (Key::Backspace, ElementState::Pressed) => {
-                        editor.editor_state.backspace(if ctx.alt_pressed {
+                        editor.editor_state.backspace(if ctx.alt {
                             MoveVariant::ByWord
-                        } else if ctx.meta_or_ctrl_pressed {
+                        } else if ctx.meta_or_ctrl {
                             MoveVariant::UntilEnd
                         } else {
                             MoveVariant::ByToken
                         });
                     }
                     (Key::ArrowUp | Key::ArrowDown, ElementState::Pressed)
-                        if ctx.meta_or_ctrl_pressed && ctx.alt_pressed =>
+                        if ctx.meta_or_ctrl && ctx.alt =>
                     {
                         editor
                             .editor_state
@@ -148,10 +148,10 @@ pub fn run() {
                                 Key::ArrowLeft => Direction::Left,
                                 _ => unreachable!(),
                             },
-                            ctx.shift_pressed,
-                            if ctx.alt_pressed {
+                            ctx.shift,
+                            if ctx.alt {
                                 MoveVariant::ByWord
-                            } else if ctx.meta_or_ctrl_pressed {
+                            } else if ctx.meta_or_ctrl {
                                 MoveVariant::UntilEnd
                             } else {
                                 MoveVariant::ByToken
@@ -159,55 +159,55 @@ pub fn run() {
                         );
                     }
                     (Key::Character(s), ElementState::Pressed) => {
-                        if s.as_str() == "c" && ctx.meta_or_ctrl_pressed {
+                        if s.as_str() == "c" && ctx.meta_or_ctrl {
                             // todo improve (ctrl/meta depending on OS)
                             editor.clipboard.write(editor.editor_state.copy());
-                        } else if s.as_str() == "x" && ctx.meta_or_ctrl_pressed {
+                        } else if s.as_str() == "x" && ctx.meta_or_ctrl {
                             // todo improve (ctrl/meta depending on OS)
                             editor.clipboard.write(editor.editor_state.cut());
-                        } else if s.as_str() == "v" && ctx.meta_or_ctrl_pressed {
+                        } else if s.as_str() == "v" && ctx.meta_or_ctrl {
                             // todo improve (ctrl/meta depending on OS)
                             if let Some(data) = editor.clipboard.read() {
                                 editor.editor_state.paste(data);
                             }
-                        } else if s.as_str() == "d" && ctx.meta_or_ctrl_pressed {
+                        } else if s.as_str() == "d" && ctx.meta_or_ctrl {
                             // todo improve (ctrl/meta depending on OS)
                             editor.editor_state.word_select();
-                        } else if s.as_str() == "a" && ctx.meta_or_ctrl_pressed {
+                        } else if s.as_str() == "a" && ctx.meta_or_ctrl {
                             editor.editor_state.select_all();
                         } else {
                             editor.editor_state.write(s.as_str());
                         }
                     }
                     (Key::Alt, ElementState::Pressed) => {
-                        ctx.alt_pressed = true;
+                        ctx.alt = true;
                     }
                     (Key::Alt, ElementState::Released) => {
-                        ctx.alt_pressed = false;
+                        ctx.alt = false;
                     }
                     (Key::Shift, ElementState::Pressed) => {
-                        ctx.shift_pressed = true;
+                        ctx.shift = true;
                     }
                     (Key::Shift, ElementState::Released) => {
-                        ctx.shift_pressed = false;
+                        ctx.shift = false;
                     }
                     (Key::Meta, ElementState::Pressed) => {
-                        ctx.meta_or_ctrl_pressed = true;
+                        ctx.meta_or_ctrl = true;
                     }
                     (Key::Meta, ElementState::Released) => {
-                        ctx.meta_or_ctrl_pressed = false;
+                        ctx.meta_or_ctrl = false;
                     }
                     (Key::Super, ElementState::Pressed) => {
-                        ctx.meta_or_ctrl_pressed = true;
+                        ctx.meta_or_ctrl = true;
                     }
                     (Key::Super, ElementState::Released) => {
-                        ctx.meta_or_ctrl_pressed = false;
+                        ctx.meta_or_ctrl = false;
                     }
                     (Key::Control, ElementState::Pressed) => {
-                        ctx.meta_or_ctrl_pressed = true;
+                        ctx.meta_or_ctrl = true;
                     }
                     (Key::Control, ElementState::Released) => {
-                        ctx.meta_or_ctrl_pressed = false;
+                        ctx.meta_or_ctrl = false;
                     }
                     _ => {
                         // println!("key: {:?}, state: {:?}", logical_key, state);
@@ -420,13 +420,13 @@ def kick =  *= .1s",
 
         if let Some(p) = ctx.mouse_at {
             let pos = renderer.system.px_to_pos(p);
-            if ctx.shift_pressed {
+            if ctx.shift {
                 if self.editor_state.has_selections() {
                     self.is_selecting = self.editor_state.extend_selection_to(pos);
                 } else {
                     self.is_selecting = Some(self.editor_state.set_single_caret(pos));
                 }
-            } else if ctx.alt_pressed {
+            } else if ctx.alt {
                 self.is_selecting = Some(self.editor_state.add_caret(pos));
             } else {
                 self.is_selecting = Some(self.editor_state.set_single_caret(pos));
