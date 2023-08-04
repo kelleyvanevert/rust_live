@@ -2,10 +2,7 @@ use creak;
 use rfd::FileDialog;
 use std::{cell::RefCell, time::Instant};
 
-use crate::{
-    render::WidgetTexture,
-    widget::{Widget, WidgetEvent},
-};
+use crate::{render::WidgetTexture, ui::WidgetEvent, widget::Widget};
 
 struct Summary {
     overall_max: f32,
@@ -87,17 +84,19 @@ impl Widget for SampleWidget {
                 self.hovering = Some((mouse.0 - bounds.0) * 2.0)
             }
             WidgetEvent::Unhover => self.hovering = None,
-            WidgetEvent::Press { .. } => {
-                if let Some(filepath) = FileDialog::new()
+            WidgetEvent::Press { double, .. } => {
+                if double && let Some(filepath) = FileDialog::new()
                     .add_filter("audio", &["wav", "mp3", "ogg", "flac"])
                     // .set_directory("~")
                     .pick_file()
                 {
                     let filepath = filepath.as_path().to_str().unwrap();
                     self.read(filepath.into());
+
+                    return true;
                 }
 
-                return true;
+                return false;
             }
             _ => {}
         }

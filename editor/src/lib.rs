@@ -4,6 +4,7 @@
 mod clipboard;
 mod highlight;
 mod render;
+mod ui;
 mod util;
 mod widget;
 mod widgets;
@@ -12,20 +13,22 @@ use clipboard::Clipboard;
 use live_editor_state::{Direction, EditorState, LineData, MoveVariant, Pos, Token};
 use render::Renderer;
 use std::time::{Duration, Instant, SystemTime};
-use widget::{WidgetEvent, WidgetManager};
+use ui::WidgetEvent;
+use widget::WidgetManager;
 use widgets::sample::SampleWidget;
 use winit::dpi::{LogicalPosition, LogicalSize, Size};
 use winit::event::{KeyEvent, MouseButton};
+use winit::event_loop::EventLoopBuilder;
 use winit::platform::macos::WindowBuilderExtMacOS;
 use winit::{
     event::{ElementState, WindowEvent},
-    event_loop::{self, ControlFlow},
+    event_loop::{ControlFlow, EventLoop},
     keyboard::Key,
     window::WindowBuilder,
 };
 
 struct Context {
-    last_press_at: Option<Instant>,
+    bounds: (f32, f32, f32, f32),
     mouse_at: Option<(f32, f32)>,
     shift: bool,
     alt: bool,
@@ -33,9 +36,9 @@ struct Context {
 }
 
 impl Context {
-    fn new() -> Self {
+    fn new(bounds: (f32, f32, f32, f32)) -> Self {
         Self {
-            last_press_at: None,
+            bounds,
             mouse_at: None,
 
             shift: false,
@@ -48,7 +51,8 @@ impl Context {
 pub fn run() {
     env_logger::init();
 
-    let event_loop = event_loop::EventLoop::new();
+    let event_loop: EventLoop<WidgetEvent> = EventLoopBuilder::with_user_event().build();
+    let proxy = event_loop.create_proxy();
     let window = WindowBuilder::new()
         .with_title("")
         .with_fullsize_content_view(true)
@@ -65,7 +69,9 @@ pub fn run() {
     let mut renderer = pollster::block_on(render::Renderer::new(&window));
 
     let mut editor = Editor::new();
-    let mut ctx = Context::new();
+    let mut ctx = Context::new((0.0, 0.0, renderer.width() as f32, renderer.height() as f32));
+
+    let mut curr_press: Option<PressEventBuilder> = None;
 
     // FPS and window updating:
     let mut then = SystemTime::now();
@@ -86,6 +92,7 @@ pub fn run() {
                     ..
                 } => {
                     renderer.resize(size);
+                    ctx.bounds = (0.0, 0.0, renderer.width() as f32, renderer.height() as f32);
                 }
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::KeyboardInput {
@@ -217,17 +224,41 @@ pub fn run() {
                     }
                 },
                 WindowEvent::MouseInput { state, button, .. } => {
-                    if button != MouseButton::Left {
-                        return;
-                    }
+                    if let Some(mouse) = ctx.mouse_at {
+                        if state == ElementState::Pressed {
+                            let _ = proxy.send_event(WidgetEvent::MouseDown {
+                                mouse,
+                                right_click: button == MouseButton::Right,
+                                bounds: ctx.bounds,
+                                shift: ctx.shift,
+                                alt: ctx.alt,
+                                meta_or_ctrl: ctx.meta_or_ctrl,
+                            });
 
-                    match state {
-                        ElementState::Pressed => {
-                            editor.on_press(&renderer, &ctx);
+                            if let Some(builder) = &mut curr_press && !builder.canceled_double {
+                                println!("ms: {:?}", builder.started_at.elapsed().as_millis());
+                                builder.has_fired = true;
+                                let _ = proxy.send_event(WidgetEvent::Press {
+                                    double: true,
+                                    mouse,
+                                    right_click: button == MouseButton::Right,
+                                    bounds: ctx.bounds,
+                                    shift: ctx.shift,
+                                    alt: ctx.alt,
+                                    meta_or_ctrl: ctx.meta_or_ctrl,
+                                });
+                            } else {
+                                curr_press = Some(PressEventBuilder::new(mouse, button == MouseButton::Right));
+                            }
+                        } else if state == ElementState::Released {
+                            let _ = proxy.send_event(WidgetEvent::MouseUp);
+
+                            if let Some(builder) = &mut curr_press {
+                                builder.release();
+                            }
                         }
-                        ElementState::Released => {
-                            editor.on_release(&renderer, &ctx);
-                        }
+                    } else {
+                        println!("WEIRD 1");
                     }
                 }
                 WindowEvent::CursorEntered { .. } => {
@@ -241,10 +272,31 @@ pub fn run() {
                 WindowEvent::CursorMoved { position, .. } => {
                     let position: LogicalPosition<f32> =
                         position.to_logical(renderer.system.scale_factor.into());
-                    let p = (position.x as f32, position.y as f32);
-                    ctx.mouse_at = Some(p);
+                    let mouse = (position.x as f32, position.y as f32);
+                    ctx.mouse_at = Some(mouse);
 
-                    editor.on_mouse_move(&renderer, &ctx);
+                    //(_, button, xy)
+                    if let Some(builder) = &mut curr_press {
+                        builder.dragged(mouse);
+
+                        if builder.canceled_double && !builder.has_fired {
+                            builder.has_fired = true;
+                            let _ = proxy.send_event(WidgetEvent::Press {
+                                double: false,
+                                mouse,
+                                right_click: builder.right_click,
+                                bounds: ctx.bounds,
+                                shift: ctx.shift,
+                                alt: ctx.alt,
+                                meta_or_ctrl: ctx.meta_or_ctrl,
+                            });
+                        }
+                    }
+
+                    let _ = proxy.send_event(WidgetEvent::MouseMove {
+                        bounds: (0.0, 0.0, renderer.width() as f32, renderer.height() as f32),
+                        mouse,
+                    });
                 }
                 WindowEvent::Moved(u) => {
                     println!("moved {:?}", u);
@@ -288,6 +340,9 @@ pub fn run() {
                 }
                 _ => (),
             },
+            winit::event::Event::UserEvent(event) => {
+                editor.event(&renderer, event);
+            },
             winit::event::Event::RedrawRequested(_) => {
                 renderer.draw(&editor.editor_state, &mut editor.widget_manager);
                 // if state.game_state != state::GameState::Quiting {
@@ -303,6 +358,29 @@ pub fn run() {
                 now = SystemTime::now();
             }
             winit::event::Event::MainEventsCleared => {
+                if let Some(mouse) = ctx.mouse_at {
+                    if let Some(builder) = &curr_press {
+                        if builder.reached_double_press_timeout() {
+                            if !builder.has_fired {
+                                let _ = proxy.send_event(WidgetEvent::Press {
+                                    double: false,
+                                    mouse,
+                                    right_click: builder.right_click,
+                                    bounds: ctx.bounds,
+                                    shift: ctx.shift,
+                                    alt: ctx.alt,
+                                    meta_or_ctrl: ctx.meta_or_ctrl,
+                                });
+                            }
+
+                            if builder.has_released() {
+                                let _ = proxy.send_event(WidgetEvent::Release);
+                                curr_press = None;
+                            }
+                        }
+                    }
+                }
+
                 if target_framerate <= delta_time.elapsed() {
                     window.request_redraw();
                     delta_time = Instant::now();
@@ -378,75 +456,145 @@ def kick =  *= .1s",
     fn hovering_widget(
         &self,
         renderer: &Renderer,
-        ctx: &Context,
+        mouse: (f32, f32),
     ) -> Option<(usize, (f32, f32, f32, f32), (f32, f32))> {
-        ctx.mouse_at.and_then(|p| {
-            return renderer.widget_at(p).map(|(id, quad)| {
-                return (id, quad, p);
-            });
+        renderer.widget_at(mouse).map(|(id, quad)| {
+            return (id, quad, mouse);
         })
     }
 
-    fn on_mouse_move(&mut self, renderer: &Renderer, ctx: &Context) {
-        if let Some(p) = ctx.mouse_at {
-            let hover = if self.is_selecting.is_none() {
-                self.hovering_widget(renderer, ctx)
-            } else {
-                None
-            };
+    fn event(&mut self, renderer: &Renderer, event: WidgetEvent) -> bool {
+        match event {
+            WidgetEvent::Hover { .. } => {
+                println!("editor:: hover");
+                //
+            }
+            WidgetEvent::MouseMove { mouse, .. } => {
+                let hover = if self.is_selecting.is_none() {
+                    self.hovering_widget(renderer, mouse)
+                } else {
+                    None
+                };
 
-            if let Some(id) = self.hovering_widget_id && hover.map(|(id, _, _)| id) != self.hovering_widget_id {
+                if let Some(id) = self.hovering_widget_id && hover.map(|(id, _, _)| id) != self.hovering_widget_id {
                 self.widget_manager.event(id, WidgetEvent::Unhover);
             }
-            if let Some((id, bounds, mouse)) = hover {
-                // renderer
-                self.widget_manager
-                    .event(id, WidgetEvent::Hover { bounds, mouse });
+                if let Some((id, bounds, mouse)) = hover {
+                    // renderer
+                    self.widget_manager
+                        .event(id, WidgetEvent::Hover { bounds, mouse });
+                }
+                self.hovering_widget_id = hover.map(|(id, _, _)| id);
+
+                if let Some(id) = self.is_selecting {
+                    let caret = renderer.system.px_to_pos(mouse);
+                    self.editor_state.drag_select(caret, id);
+                }
             }
-            self.hovering_widget_id = hover.map(|(id, _, _)| id);
-
-            if let Some(id) = self.is_selecting {
-                let caret = renderer.system.px_to_pos(p);
-                self.editor_state.drag_select(caret, id);
+            WidgetEvent::Unhover => {
+                println!("editor:: unhover");
+                if let Some(id) = self.hovering_widget_id {
+                    self.widget_manager.event(id, WidgetEvent::Unhover);
+                }
             }
-        }
-    }
+            WidgetEvent::MouseDown {
+                mouse, shift, alt, ..
+            } => {
+                println!("editor:: mouse down");
+                if let Some((id, widget_bounds, _)) = self.hovering_widget(renderer, mouse) {
+                    self.widget_manager
+                        .event(id, event.child_relative(widget_bounds));
+                }
 
-    fn on_press(&mut self, renderer: &Renderer, ctx: &Context) {
-        let mut handled = false;
-        let press = self.hovering_widget(renderer, ctx);
-
-        if let Some(id) = self.pressing_widget_id && press.map(|(id, _, _)| id) != self.pressing_widget_id {
-            self.widget_manager.event(id, WidgetEvent::Release);
-        }
-        if let Some((id, bounds, mouse)) = press {
-            handled = self
-                .widget_manager
-                .event(id, WidgetEvent::Press { bounds, mouse });
-        }
-        self.pressing_widget_id = press.map(|(id, _, _)| id);
-
-        if handled {
-            return;
-        }
-
-        if let Some(p) = ctx.mouse_at {
-            let pos = renderer.system.px_to_pos(p);
-            if ctx.shift {
-                if self.editor_state.has_selections() {
-                    self.is_selecting = self.editor_state.extend_selection_to(pos);
+                let pos = renderer.system.px_to_pos(mouse);
+                if shift {
+                    if self.editor_state.has_selections() {
+                        self.is_selecting = self.editor_state.extend_selection_to(pos);
+                    } else {
+                        self.is_selecting = Some(self.editor_state.set_single_caret(pos));
+                    }
+                } else if alt {
+                    self.is_selecting = Some(self.editor_state.add_caret(pos));
                 } else {
                     self.is_selecting = Some(self.editor_state.set_single_caret(pos));
                 }
-            } else if ctx.alt {
-                self.is_selecting = Some(self.editor_state.add_caret(pos));
-            } else {
-                self.is_selecting = Some(self.editor_state.set_single_caret(pos));
             }
+            WidgetEvent::Press { double, mouse, .. } => {
+                println!("editor:: press");
+                if double {
+                    println!("DOUBLE!");
+                }
+
+                let press = self.hovering_widget(renderer, mouse);
+
+                if let Some(id) = self.pressing_widget_id && press.map(|(id, _, _)| id) != self.pressing_widget_id {
+                    self.widget_manager.event(id, WidgetEvent::Release);
+                }
+                if let Some((id, bounds, _)) = press {
+                    self.widget_manager.event(id, event.child_relative(bounds));
+                }
+                self.pressing_widget_id = press.map(|(id, _, _)| id);
+            }
+            WidgetEvent::MouseUp => {
+                // hmm, can't sent this to the widget w/o coords..
+                println!("editor:: mouse up");
+                self.is_selecting = None;
+            }
+            WidgetEvent::Release => {
+                // hmm, can't sent this to the widget w/o coords..
+                println!("editor:: release");
+            }
+        }
+
+        false
+    }
+}
+
+fn dist(a: (f32, f32), b: (f32, f32)) -> f32 {
+    ((b.0 - a.0).powf(2.0) + (b.1 - a.1).powf(2.0)).sqrt()
+}
+
+const DOUBLE_PRESS_TIMEOUT_MS: u128 = 150;
+const PRESS_CANCEL_DRAG_DIST: f32 = 2.0;
+
+struct PressEventBuilder {
+    started_at: Instant,
+    released_at: Option<Instant>,
+    canceled_double: bool,
+    has_fired: bool,
+
+    mouse: (f32, f32),
+    right_click: bool,
+}
+
+impl PressEventBuilder {
+    fn new(mouse: (f32, f32), right_click: bool) -> Self {
+        Self {
+            started_at: Instant::now(),
+            released_at: None,
+            canceled_double: false,
+            has_fired: false,
+
+            mouse,
+            right_click,
         }
     }
 
-    fn on_release(&mut self, _renderer: &Renderer, _ctx: &Context) {
-        self.is_selecting = None;
+    fn dragged(&mut self, mouse: (f32, f32)) {
+        if !self.has_fired && dist(self.mouse, mouse) >= PRESS_CANCEL_DRAG_DIST {
+            self.canceled_double = true;
+        }
+    }
+
+    fn release(&mut self) {
+        self.released_at = Some(Instant::now());
+    }
+
+    fn has_released(&self) -> bool {
+        self.released_at.is_some()
+    }
+
+    fn reached_double_press_timeout(&self) -> bool {
+        self.started_at.elapsed().as_millis() >= DOUBLE_PRESS_TIMEOUT_MS
     }
 }

@@ -1,10 +1,7 @@
 use palette::{FromColor, Hsla, IntoColor, Lcha, Srgba};
 // use std::time::Instant;
 
-use crate::{
-    render::WidgetTexture,
-    widget::{Widget, WidgetEvent},
-};
+use crate::{render::WidgetTexture, ui::WidgetEvent, widget::Widget};
 
 pub struct ColorSwatchWidget {
     hovering: bool,

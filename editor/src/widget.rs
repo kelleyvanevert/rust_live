@@ -1,6 +1,6 @@
 use live_editor_state::WidgetInfo;
 
-use crate::render::WidgetTexture;
+use crate::{render::WidgetTexture, ui::WidgetEvent};
 
 pub trait Widget {
     fn kind(&self) -> &'static str;
@@ -25,21 +25,6 @@ pub trait Widget {
     fn describe(&self) -> String {
         format!("[no description]")
     }
-}
-
-#[allow(unused)]
-#[derive(Debug, Clone, Copy)]
-pub enum WidgetEvent {
-    Hover {
-        bounds: (f32, f32, f32, f32),
-        mouse: (f32, f32),
-    },
-    Unhover,
-    Press {
-        bounds: (f32, f32, f32, f32),
-        mouse: (f32, f32),
-    },
-    Release,
 }
 
 pub struct WidgetManager {
