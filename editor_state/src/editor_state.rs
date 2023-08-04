@@ -144,6 +144,10 @@ impl EditorState {
         self.selection().caret(caret).set_only()
     }
 
+    pub fn deselect(&mut self) {
+        self.selections = vec![];
+    }
+
     pub fn select_all(&mut self) -> usize {
         let end = self.linedata.end();
         self.selection()

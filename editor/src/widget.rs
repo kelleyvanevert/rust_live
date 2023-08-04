@@ -11,7 +11,9 @@ pub trait Widget {
     }
 
     // Receive events such as: suspend, update how many instances are used, mouse input stuff, etc.
-    fn event(&mut self, _event: WidgetEvent) {}
+    fn event(&mut self, _event: WidgetEvent) -> bool {
+        false
+    }
 
     // Draw to pixel frame
     fn draw(&self, _frame: &mut WidgetTexture) {}
@@ -25,10 +27,13 @@ pub trait Widget {
     }
 }
 
+#[allow(unused)]
 #[derive(Debug, Clone, Copy)]
 pub enum WidgetEvent {
     Hover { uv: (f32, f32) },
     Unhover,
+    Press { uv: (f32, f32) },
+    Release,
 }
 
 pub struct WidgetManager {
@@ -57,15 +62,11 @@ impl WidgetManager {
         }
     }
 
-    pub fn hover(&mut self, id: usize, uv: (f32, f32)) {
+    pub fn event(&mut self, id: usize, event: WidgetEvent) -> bool {
         if let Some(widget) = self.widgets.get_mut(id) {
-            widget.event(WidgetEvent::Hover { uv });
-        }
-    }
-
-    pub fn unhover(&mut self, id: usize) {
-        if let Some(widget) = self.widgets.get_mut(id) {
-            widget.event(WidgetEvent::Unhover);
+            widget.event(event)
+        } else {
+            false
         }
     }
 }

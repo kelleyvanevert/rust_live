@@ -1,4 +1,5 @@
 use creak;
+use rfd::FileDialog;
 use std::{cell::RefCell, time::Instant};
 
 use crate::{
@@ -12,7 +13,7 @@ struct Summary {
 }
 
 pub struct SampleWidget {
-    filepath: String,
+    filepath: Option<String>,
     hovering: Option<(f32, f32)>,
     samples: Option<Vec<f32>>,
     summary: RefCell<Option<Summary>>,
@@ -21,23 +22,23 @@ pub struct SampleWidget {
 impl SampleWidget {
     pub fn new(filepath: impl Into<String>) -> Self {
         let mut widget = Self {
-            filepath: filepath.into(),
+            filepath: None,
             hovering: None,
             samples: None,
             summary: RefCell::new(None),
         };
 
-        widget.read();
+        widget.read(filepath.into());
 
         widget
     }
 
-    fn read(&mut self) {
-        let decoder = creak::Decoder::open(&self.filepath).ok();
+    fn read(&mut self, filepath: String) -> bool {
+        let decoder = creak::Decoder::open(&filepath).ok();
 
         let Some(decoder) = decoder else {
-            println!("Could not read audio file at: {:?}", self.filepath);
-            return;
+            println!("Could not read audio file at: {:?}", filepath);
+            return false;
         };
 
         let info = decoder.info();
@@ -60,8 +61,11 @@ impl SampleWidget {
 
         if self.samples.is_some() {
             println!("  READ :)");
+            self.filepath = Some(filepath);
+            true
         } else {
             println!("  error reading samples :(");
+            false
         }
     }
 }
@@ -75,11 +79,26 @@ impl Widget for SampleWidget {
         6
     }
 
-    fn event(&mut self, event: WidgetEvent) {
+    fn event(&mut self, event: WidgetEvent) -> bool {
         match event {
             WidgetEvent::Hover { uv } => self.hovering = Some(uv),
             WidgetEvent::Unhover => self.hovering = None,
+            WidgetEvent::Press { .. } => {
+                if let Some(filepath) = FileDialog::new()
+                    .add_filter("audio", &["wav", "mp3", "ogg", "flac"])
+                    // .set_directory("~")
+                    .pick_file()
+                {
+                    let filepath = filepath.as_path().to_str().unwrap();
+                    self.read(filepath.into());
+                }
+
+                return true;
+            }
+            _ => {}
         }
+
+        false
     }
 
     fn draw(&self, frame: &mut WidgetTexture) {
@@ -161,6 +180,13 @@ impl Widget for SampleWidget {
             let ymin = (-rms * scale + half).round() as usize;
             let ymax = (rms * scale + half).round() as usize;
             for y in ymin..ymax {
+                frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
+            }
+        }
+
+        if let Some(uv) = self.hovering {
+            let x = (uv.0 * (width as f32 - 4.0)).round() as usize + 2;
+            for y in 0..height {
                 frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
             }
         }

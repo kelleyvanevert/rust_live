@@ -19,6 +19,7 @@ tao = "0.21.1"
 rgb = "0.8.36"
 palette = "0.7.2"
 creak = "0.3.0"
+rfd = "0.11.4"
 
 [dependencies.image]
 version = "0.24.6"

@@ -50,11 +50,14 @@ impl Widget for ColorSwatchWidget {
         5
     }
 
-    fn event(&mut self, event: WidgetEvent) {
+    fn event(&mut self, event: WidgetEvent) -> bool {
         match event {
             WidgetEvent::Hover { .. } => self.hovering = true,
             WidgetEvent::Unhover => self.hovering = false,
+            _ => {}
         }
+
+        false
     }
 
     fn draw(&self, frame: &mut WidgetTexture) {
