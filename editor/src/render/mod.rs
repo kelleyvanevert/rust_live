@@ -30,6 +30,8 @@ pub struct Renderer<'a> {
     code_pass: CodePass<'a>,
     widgets_pass: WidgetsPass,
     selections_pass: SelectionsPass,
+
+    widget_instances: Vec<(usize, (f32, f32, f32, f32))>,
 }
 
 impl<'a> Renderer<'a> {
@@ -96,6 +98,9 @@ impl<'a> Renderer<'a> {
             widgets_pass,
             code_pass,
             selections_pass,
+
+            // immediate mode UI state glue..
+            widget_instances: vec![],
         }
     }
 
@@ -119,6 +124,15 @@ impl<'a> Renderer<'a> {
         self.selections_pass.resize(&self.queue, &self.config);
     }
 
+    pub fn widget_at(&self, (x, y): (f32, f32)) -> Option<(usize, (f32, f32, f32, f32))> {
+        self.widget_instances
+            .iter()
+            .find(|&&(_, (min_x, min_y, max_x, max_y))| {
+                min_x <= x && x <= max_x && min_y <= y && y <= max_y
+            })
+            .map(|t| *t)
+    }
+
     pub fn draw(&mut self, editor_state: &EditorState, widget_manager: &mut WidgetManager) {
         let mut encoder = self
             .device
@@ -133,7 +147,7 @@ impl<'a> Renderer<'a> {
 
         self.background_pass.draw(&view, &mut encoder);
 
-        let widget_instances = self.code_pass.draw(
+        self.widget_instances = self.code_pass.draw(
             &self.device,
             &self.queue,
             &self.system,
@@ -147,7 +161,7 @@ impl<'a> Renderer<'a> {
             &self.queue,
             &self.system,
             &view,
-            widget_instances,
+            &self.widget_instances,
             widget_manager,
             &mut encoder,
         );

@@ -30,9 +30,15 @@ pub trait Widget {
 #[allow(unused)]
 #[derive(Debug, Clone, Copy)]
 pub enum WidgetEvent {
-    Hover { uv: (f32, f32) },
+    Hover {
+        bounds: (f32, f32, f32, f32),
+        mouse: (f32, f32),
+    },
     Unhover,
-    Press { uv: (f32, f32) },
+    Press {
+        bounds: (f32, f32, f32, f32),
+        mouse: (f32, f32),
+    },
     Release,
 }
 

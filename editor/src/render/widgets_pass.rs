@@ -112,13 +112,15 @@ impl WidgetsPass {
         queue: &wgpu::Queue,
         system: &SystemData,
         view: &TextureView,
-        widget_instances: Vec<(usize, (f32, f32, f32, f32))>,
+        widget_instances: &[(usize, (f32, f32, f32, f32))],
         widget_manager: &mut WidgetManager,
         encoder: &mut wgpu::CommandEncoder,
     ) {
         for group in widget_instances.group_by(|a, b| a.0 == b.0) {
             let id = group[0].0;
             let (min_x, min_y, max_x, max_y) = group[0].1;
+
+            // physical (multiplied by 2, hacky for now)
             let width = (max_x - min_x).round() as usize * 2;
             let height = (max_y - min_y).round() as usize * 2;
 
@@ -323,6 +325,7 @@ impl WidgetTexture {
 
     /// Get a mutable byte slice for the pixel buffer. The buffer is _not_ cleared for you; it will
     /// retain the previous frame's contents until you clear it yourself.
+    #[allow(unused)]
     pub fn frame_mut(&mut self) -> &mut [u8] {
         &mut self.pixels
     }

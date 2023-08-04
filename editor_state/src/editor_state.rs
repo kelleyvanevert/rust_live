@@ -2,10 +2,7 @@ use std::collections::HashSet;
 
 use tinyset::SetUsize;
 
-use crate::{
-    selection::Selection, Direction, EditResult, LineData, MoveVariant, Pos, Range, Token,
-    WidgetInfo,
-};
+use crate::{selection::Selection, Direction, EditResult, LineData, MoveVariant, Pos, Range};
 
 pub struct LineSelection {
     pub row: i32,
@@ -121,13 +118,6 @@ impl EditorState {
         }
 
         line_selections
-    }
-
-    pub fn find_widget_at(&self, pos: Pos<f32>) -> Option<(usize, (f32, f32))> {
-        match self.linedata.hover(pos) {
-            Some((Token::Widget(WidgetInfo { id, .. }), p)) => Some((id, p)),
-            _ => None,
-        }
     }
 
     fn selection(&mut self) -> SelectionBuilder<NoCaret> {

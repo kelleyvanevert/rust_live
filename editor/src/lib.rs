@@ -25,6 +25,7 @@ use winit::{
 };
 
 struct Context {
+    last_press_at: Option<Instant>,
     mouse_at: Option<(f32, f32)>,
     shift: bool,
     alt: bool,
@@ -34,7 +35,9 @@ struct Context {
 impl Context {
     fn new() -> Self {
         Self {
+            last_press_at: None,
             mouse_at: None,
+
             shift: false,
             alt: false,
             meta_or_ctrl: false,
@@ -372,10 +375,15 @@ def kick =  *= .1s",
         }
     }
 
-    fn hovering_widget(&self, renderer: &Renderer, ctx: &Context) -> Option<(usize, (f32, f32))> {
+    fn hovering_widget(
+        &self,
+        renderer: &Renderer,
+        ctx: &Context,
+    ) -> Option<(usize, (f32, f32, f32, f32), (f32, f32))> {
         ctx.mouse_at.and_then(|p| {
-            self.editor_state
-                .find_widget_at(renderer.system.px_to_pos_f(p))
+            return renderer.widget_at(p).map(|(id, quad)| {
+                return (id, quad, p);
+            });
         })
     }
 
@@ -387,13 +395,15 @@ def kick =  *= .1s",
                 None
             };
 
-            if let Some(id) = self.hovering_widget_id && hover.map(|(id, _)| id) != self.hovering_widget_id {
+            if let Some(id) = self.hovering_widget_id && hover.map(|(id, _, _)| id) != self.hovering_widget_id {
                 self.widget_manager.event(id, WidgetEvent::Unhover);
             }
-            if let Some((id, uv)) = hover {
-                self.widget_manager.event(id, WidgetEvent::Hover { uv });
+            if let Some((id, bounds, mouse)) = hover {
+                // renderer
+                self.widget_manager
+                    .event(id, WidgetEvent::Hover { bounds, mouse });
             }
-            self.hovering_widget_id = hover.map(|(id, _)| id);
+            self.hovering_widget_id = hover.map(|(id, _, _)| id);
 
             if let Some(id) = self.is_selecting {
                 let caret = renderer.system.px_to_pos(p);
@@ -406,13 +416,15 @@ def kick =  *= .1s",
         let mut handled = false;
         let press = self.hovering_widget(renderer, ctx);
 
-        if let Some(id) = self.pressing_widget_id && press.map(|(id, _)| id) != self.pressing_widget_id {
+        if let Some(id) = self.pressing_widget_id && press.map(|(id, _, _)| id) != self.pressing_widget_id {
             self.widget_manager.event(id, WidgetEvent::Release);
         }
-        if let Some((id, uv)) = press {
-            handled = self.widget_manager.event(id, WidgetEvent::Press { uv });
+        if let Some((id, bounds, mouse)) = press {
+            handled = self
+                .widget_manager
+                .event(id, WidgetEvent::Press { bounds, mouse });
         }
-        self.pressing_widget_id = press.map(|(id, _)| id);
+        self.pressing_widget_id = press.map(|(id, _, _)| id);
 
         if handled {
             return;

@@ -14,7 +14,7 @@ struct Summary {
 
 pub struct SampleWidget {
     filepath: Option<String>,
-    hovering: Option<(f32, f32)>,
+    hovering: Option<f32>, // x within widget
     samples: Option<Vec<f32>>,
     summary: RefCell<Option<Summary>>,
 }
@@ -81,7 +81,11 @@ impl Widget for SampleWidget {
 
     fn event(&mut self, event: WidgetEvent) -> bool {
         match event {
-            WidgetEvent::Hover { uv } => self.hovering = Some(uv),
+            WidgetEvent::Hover { bounds, mouse } => {
+                // `bounds` and `mouse` are logical pixels, but we draw in physical pixels
+                //  .. so (hacky) just go ahead and multiply by 2 for now
+                self.hovering = Some((mouse.0 - bounds.0) * 2.0)
+            }
             WidgetEvent::Unhover => self.hovering = None,
             WidgetEvent::Press { .. } => {
                 if let Some(filepath) = FileDialog::new()
@@ -102,6 +106,7 @@ impl Widget for SampleWidget {
     }
 
     fn draw(&self, frame: &mut WidgetTexture) {
+        // physical pixels, btw
         let width = frame.width();
         let height = frame.height();
 
@@ -115,6 +120,7 @@ impl Widget for SampleWidget {
             let t0 = Instant::now();
 
             let num_samples = samples.len();
+            // physical pixels, btw
             let samples_per_pixel = num_samples / (width - 4);
 
             // (min, max, rms)
@@ -184,8 +190,8 @@ impl Widget for SampleWidget {
             }
         }
 
-        if let Some(uv) = self.hovering {
-            let x = (uv.0 * (width as f32 - 4.0)).round() as usize + 2;
+        if let Some(x) = self.hovering {
+            let x = (x.round() as usize).max(0).min(width - 2);
             for y in 0..height {
                 frame.set_pixel(x, y, &[0x00, 0x00, 0x00, 0xff]);
             }
