@@ -148,6 +148,14 @@ impl EditorState {
             .set_only()
     }
 
+    pub fn select_word_at(&mut self, pos: Pos) {
+        let pos = self.linedata.snap(pos);
+        if let Some(range) = self.linedata.find_word_at(pos) {
+            let id = self.selection().for_range(range).add();
+            self.normalize_selections(Some(id), Some(Direction::Right));
+        }
+    }
+
     /**
         Perform "word selection", such as it will also typically happen in VS Code when pressing Cmd+D:
 

@@ -454,7 +454,7 @@ def kick =  *= .1s",
         }
     }
 
-    fn hovering_widget(
+    fn find_widget(
         &self,
         renderer: &Renderer,
         mouse: (f32, f32),
@@ -472,7 +472,7 @@ def kick =  *= .1s",
             }
             WidgetEvent::MouseMove { mouse, .. } => {
                 let hover = if self.is_selecting.is_none() {
-                    self.hovering_widget(renderer, mouse)
+                    self.find_widget(renderer, mouse)
                 } else {
                     None
                 };
@@ -502,7 +502,7 @@ def kick =  *= .1s",
                 mouse, shift, alt, ..
             } => {
                 println!("editor:: mouse down");
-                if let Some((id, widget_bounds, _)) = self.hovering_widget(renderer, mouse) {
+                if let Some((id, widget_bounds, _)) = self.find_widget(renderer, mouse) {
                     self.widget_manager
                         .event(id, event.child_relative(widget_bounds));
                 }
@@ -521,20 +521,26 @@ def kick =  *= .1s",
                 }
             }
             WidgetEvent::Press { double, mouse, .. } => {
-                println!("editor:: press");
-                if double {
-                    println!("DOUBLE!");
-                }
+                println!(
+                    "editor:: press {:?}",
+                    if double { "DOUBLE" } else { "single" }
+                );
 
-                let press = self.hovering_widget(renderer, mouse);
-
-                if let Some(id) = self.pressing_widget_id && press.map(|(id, _, _)| id) != self.pressing_widget_id {
+                // pressing widgets
+                let w = self.find_widget(renderer, mouse);
+                if let Some(id) = self.pressing_widget_id && w.map(|(id, _, _)| id) != self.pressing_widget_id {
                     self.widget_manager.event(id, WidgetEvent::Release { double });
                 }
-                if let Some((id, bounds, _)) = press {
+                if let Some((id, bounds, _)) = w {
                     self.widget_manager.event(id, event.child_relative(bounds));
                 }
-                self.pressing_widget_id = press.map(|(id, _, _)| id);
+                self.pressing_widget_id = w.map(|(id, _, _)| id);
+
+                // double press -> selecting words
+                if double {
+                    let pos = renderer.system.px_to_pos(mouse);
+                    self.editor_state.select_word_at(pos);
+                }
             }
             WidgetEvent::MouseUp => {
                 // hmm, can't sent this to the widget w/o coords..
