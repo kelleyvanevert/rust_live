@@ -4,7 +4,7 @@
 use cgmath::SquareMatrix;
 use std::time::{Duration, Instant, SystemTime};
 use wgpu::util::DeviceExt;
-use winit::dpi::{LogicalSize, PhysicalSize, Size};
+use winit::dpi::{LogicalSize, Size};
 use winit::event::KeyEvent;
 use winit::event_loop::EventLoopBuilder;
 use winit::platform::macos::WindowBuilderExtMacOS;
@@ -50,13 +50,13 @@ pub fn main() {
 
         match event {
             winit::event::Event::WindowEvent { event, .. } => match event {
-                WindowEvent::Resized(size)
+                WindowEvent::Resized(_)
                 | WindowEvent::ScaleFactorChanged {
-                    new_inner_size: &mut size,
+                    new_inner_size: &mut _,
                     ..
                 } => {
-                    renderer.resize(size);
                     state.resize(&window);
+                    renderer.update(&state);
                 }
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::KeyboardInput {
@@ -76,6 +76,7 @@ pub fn main() {
             winit::event::Event::RedrawRequested(_) => {
                 state.frameno += 1;
 
+                renderer.update(&state);
                 renderer.draw(&state);
 
                 fps += 1;
@@ -157,7 +158,7 @@ impl SystemData {
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        let mut system_uniform = SystemUniform::new();
+        let mut system_uniform = SystemUniform::new(config.width as f32, config.height as f32);
         system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
 
         let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -217,17 +218,23 @@ impl SystemData {
         }
     }
 
-    pub fn resize(&mut self, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration) {
-        self.system_uniform.update(
-            self.scale_factor,
-            (config.width as f32, config.height as f32),
-        );
-
+    fn update_buffer(&mut self, queue: &wgpu::Queue) {
         queue.write_buffer(
             &self.buffer,
             0,
             bytemuck::cast_slice(&[self.system_uniform]),
         );
+    }
+
+    pub fn update_for_state(&mut self, queue: &wgpu::Queue, state: &State) {
+        self.system_uniform.dim = [state.width, state.height];
+
+        self.system_uniform
+            .update(self.scale_factor, (state.width, state.height));
+
+        self.system_uniform.time = state.t0.elapsed().as_secs_f32();
+
+        self.update_buffer(&queue);
     }
 }
 
@@ -235,16 +242,26 @@ impl SystemData {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SystemUniform {
     view_proj: [[f32; 4]; 4],
+
+    time: f32,
+    // frameno: f32,
+    dim: [f32; 2],
 }
 
 impl SystemUniform {
-    fn new() -> Self {
+    fn new(width: f32, height: f32) -> Self {
         Self {
             view_proj: cgmath::Matrix4::identity().into(),
+            time: 0.0,
+            dim: [width, height],
         }
     }
 
-    fn update(&mut self, sf: f32, (width, height): (f32, f32)) {
+    fn update(&mut self, _sf: f32, (width, height): (f32, f32)) {
+        // because now, the width and height are logical instead of physical..
+        // TODO, when building something real: only use `PhysicalSize` and `LogicalSize`, to be sure of what we're working with..
+        let sf = 1.0;
+
         //             (1,1)
         //        (0,0)
         // (-1,-1)
@@ -267,6 +284,7 @@ impl SystemUniform {
 }
 
 struct Renderer {
+    #[allow(unused)]
     scale_factor: f32,
     surface: wgpu::Surface,
     config: wgpu::SurfaceConfiguration,
@@ -334,13 +352,24 @@ impl Renderer {
         }
     }
 
-    fn resize(&mut self, size: PhysicalSize<u32>) {
-        self.config.width = size.width.max(1);
-        self.config.height = size.height.max(1);
+    // fn resize(&mut self, size: PhysicalSize<u32>) {
+    //     self.config.width = size.width.max(1);
+    //     self.config.height = size.height.max(1);
+
+    //     self.surface.configure(&self.device, &self.config);
+    //     // self.system.resize(&self.queue, &self.config);
+    //     self.sdf_pass.resize(&self.queue, &self.config);
+    // }
+
+    fn update(&mut self, state: &State) {
+        self.config.width = state.width.round() as u32 * 2;
+        self.config.height = state.height.round() as u32 * 2;
 
         self.surface.configure(&self.device, &self.config);
-        self.system.resize(&self.queue, &self.config);
+        // self.system.resize(&self.queue, &self.config);
         self.sdf_pass.resize(&self.queue, &self.config);
+
+        self.system.update_for_state(&self.queue, state);
     }
 
     #[allow(unused)]
