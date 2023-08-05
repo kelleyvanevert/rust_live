@@ -104,6 +104,7 @@ pub fn main() {
 }
 
 pub struct State {
+    #[allow(unused)]
     t0: Instant,
     frameno: usize,
 
@@ -146,9 +147,6 @@ impl State {
 pub struct SystemData {
     pub scale_factor: f32,
 
-    pub vars_uniform: VarsUniform,
-    pub vars_buffer: wgpu::Buffer,
-
     pub system_uniform: SystemUniform,
     pub system_buffer: wgpu::Buffer,
 
@@ -163,12 +161,6 @@ impl SystemData {
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        let vars_uniform = VarsUniform {
-            time: 0.0,
-            radius: 100.0,
-            center: [300.0, 300.0],
-        };
-
         let mut system_uniform = SystemUniform::new();
         system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
 
@@ -178,62 +170,38 @@ impl SystemData {
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
-        let vars_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Vars buffer"),
-            contents: bytemuck::cast_slice(&[vars_uniform]),
-            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-        });
-
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
             label: None,
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::VERTEX,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
+            entries: &[wgpu::BindGroupLayoutEntry {
+                binding: 0,
+                visibility: wgpu::ShaderStages::VERTEX,
+                ty: wgpu::BindingType::Buffer {
+                    ty: wgpu::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: None,
                 },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::VERTEX | wgpu::ShaderStages::FRAGMENT,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
+                count: None,
+            }],
         });
 
         // Create bind group
         let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &bind_group_layout,
-            entries: &[
-                wgpu::BindGroupEntry {
-                    binding: 0,
-                    resource: system_buffer.as_entire_binding(),
-                },
-                wgpu::BindGroupEntry {
-                    binding: 1,
-                    resource: vars_buffer.as_entire_binding(),
-                },
-            ],
+            entries: &[wgpu::BindGroupEntry {
+                binding: 0,
+                resource: system_buffer.as_entire_binding(),
+            }],
             label: None,
         });
 
         Self {
             scale_factor,
-            vars_uniform,
+
             system_uniform,
+            system_buffer,
+
             bind_group_layout,
             bind_group,
-            vars_buffer,
-            system_buffer,
         }
     }
 
@@ -243,21 +211,11 @@ impl SystemData {
             0,
             bytemuck::cast_slice(&[self.system_uniform]),
         );
-
-        queue.write_buffer(
-            &self.vars_buffer,
-            0,
-            bytemuck::cast_slice(&[self.vars_uniform]),
-        );
     }
 
     pub fn update_for_state(&mut self, queue: &wgpu::Queue, state: &State) {
-        // self.system_uniform.dim = [state.width, state.height];
-
         self.system_uniform
             .update(self.scale_factor, (state.width, state.height));
-
-        self.vars_uniform.time = state.t0.elapsed().as_secs_f32();
 
         self.update_buffer(&queue);
     }
@@ -541,7 +499,7 @@ impl VertexBufferBuilder {
 #[repr(C)]
 #[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 struct Instance {
-    offset: [f32; 2],
+    center: [f32; 2],
     radius: f32,
     trash: f32,
 }
@@ -660,22 +618,22 @@ impl SdfPass {
 
         let instances = vec![
             Instance {
-                offset: [0.0, 0.0],
+                center: [300.0, 300.0],
                 radius: 60.0,
                 trash: 0.0,
             },
             Instance {
-                offset: [200.0, 0.0],
+                center: [500.0, 300.0],
                 radius: 120.0,
                 trash: 0.0,
             },
             Instance {
-                offset: [0.0, 200.0],
+                center: [300.0, 500.0],
                 radius: 180.0,
                 trash: 0.0,
             },
             Instance {
-                offset: [200.0, 200.0],
+                center: [500.0, 500.0],
                 radius: 20.0,
                 trash: 0.0,
             },

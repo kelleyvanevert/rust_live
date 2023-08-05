@@ -14,14 +14,14 @@ struct VertexInput {
 };
 
 struct InstanceInput {
-    @location(1) offset: vec2<f32>,
+    @location(1) center: vec2<f32>,
     @location(2) radius: f32,
     @location(3) trash: f32,
 };
 
 struct VertexOutput {
     @builtin(position) position: vec4<f32>,
-    @location(0) offset: vec2<f32>,
+    @location(0) center: vec2<f32>,
     @location(1) radius: f32,
 };
 
@@ -33,7 +33,7 @@ fn vs_main(
     var out: VertexOutput;
     out.position = system.view_proj * vec4<f32>(model.position, 1.0);
 
-    out.offset = instance.offset;
+    out.center = instance.center;
     out.radius = instance.radius;
 
     return out;
@@ -42,19 +42,9 @@ fn vs_main(
 // Fragment shader
 // ===
 
-struct VarsUniform {
-    time: f32,
-    radius: f32,
-    center: vec2<f32>,
-};
-
-@group(0)
-@binding(1)
-var<uniform> vars: VarsUniform;
-
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    let sd = distance(vars.center, (in.position.xy - in.offset)) - in.radius;
+    let sd = distance(in.center, in.position.xy) - in.radius;
 
     let x = smoothstep(4.0, 5.0, abs(sd));
 
