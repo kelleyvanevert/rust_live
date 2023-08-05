@@ -466,7 +466,7 @@ impl Renderer {
 #[derive(Copy, Clone, Debug)]
 pub struct Vertex {
     position: [f32; 3],
-    // color: [f32; 4],
+    radius: f32,
 }
 
 unsafe impl bytemuck::Pod for Vertex {}
@@ -475,9 +475,9 @@ unsafe impl bytemuck::Zeroable for Vertex {}
 impl Vertex {
     const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
 
-    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
+    const ATTRIBS: [wgpu::VertexAttribute; 2] = wgpu::vertex_attr_array![
         0 => Float32x3,
-        // 1 => Float32x4,
+        1 => Float32,
     ];
 
     fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -490,9 +490,10 @@ impl Vertex {
         }
     }
 
-    fn from((x, y): (f32, f32)) -> Self {
+    fn from(x: f32, y: f32, radius: f32) -> Self {
         Self {
             position: [x, y, 0.0],
+            radius,
         }
     }
 }
@@ -510,15 +511,10 @@ impl VertexBufferBuilder {
         }
     }
 
-    fn push_triangle(&mut self, a: (f32, f32), b: (f32, f32), c: (f32, f32)) {
+    fn push_triangle(&mut self, vertices: [Vertex; 3]) {
         let num_vertices = self.vertex_data.len() as u32;
 
-        self.vertex_data.extend(&[
-            //
-            Vertex::from(a),
-            Vertex::from(b),
-            Vertex::from(c),
-        ]);
+        self.vertex_data.extend(vertices);
 
         self.index_data.extend(&[
             //
@@ -662,11 +658,11 @@ impl SdfPass {
     ) {
         let mut builder = VertexBufferBuilder::new();
 
-        builder.push_triangle(
-            (50.0, 50.0),
-            (state.width - 50.0, 50.0),
-            (50.0, state.height - 50.0),
-        );
+        builder.push_triangle([
+            Vertex::from(50.0, 50.0, 10.0),
+            Vertex::from(state.width - 50.0, 50.0, 800.0),
+            Vertex::from(50.0, state.height - 50.0, 300.0),
+        ]);
 
         let vertex_data_raw: &[u8] = bytemuck::cast_slice(&builder.vertex_data);
         queue.write_buffer(&self.vertex_buffer, 0, vertex_data_raw);
