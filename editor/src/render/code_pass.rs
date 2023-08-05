@@ -1,5 +1,4 @@
 use live_editor_state::{EditorState, Pos};
-use wgpu::TextureView;
 use wgpu_text::{
     glyph_brush::{
         ab_glyph::FontRef, FontId, HorizontalAlign, Layout, OwnedText, Section, Text, VerticalAlign,
@@ -82,14 +81,13 @@ impl<'a> CodePass<'a> {
             .resize_view(config.width as f32, config.height as f32, &queue);
     }
 
-    pub fn draw(
-        &mut self,
+    pub fn draw<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
         system: &SystemData,
-        view: &TextureView,
         editor_state: &EditorState,
-        encoder: &mut wgpu::CommandEncoder,
+        render_pass: &mut wgpu::RenderPass<'pass>,
     ) -> Vec<(usize, (f32, f32, f32, f32))> {
         let sf = system.scale_factor;
 
@@ -182,22 +180,8 @@ impl<'a> CodePass<'a> {
             .queue(&device, &queue, vec![&code_section])
             .unwrap();
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Code render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
-
-        self.title_brush.draw(&mut render_pass);
-        self.code_brush.draw(&mut render_pass);
+        self.title_brush.draw(render_pass);
+        self.code_brush.draw(render_pass);
 
         widget_instances
     }

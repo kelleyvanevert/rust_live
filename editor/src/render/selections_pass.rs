@@ -93,14 +93,13 @@ impl SelectionsPass {
 
     pub fn resize(&mut self, _queue: &wgpu::Queue, _config: &wgpu::SurfaceConfiguration) {}
 
-    pub fn draw(
-        &mut self,
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        system: &SystemData,
-        view: &wgpu::TextureView,
+    pub fn draw<'pass>(
+        &'pass mut self,
+        _device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        system: &'pass SystemData,
         editor_state: &EditorState,
-        encoder: &mut wgpu::CommandEncoder,
+        render_pass: &mut wgpu::RenderPass<'pass>,
     ) {
         let sf = system.scale_factor;
 
@@ -140,24 +139,13 @@ impl SelectionsPass {
             );
         }
 
-        let (stg_vertex, stg_index, num_indices) = builder.build(&device);
+        let vertex_data_raw: &[u8] = bytemuck::cast_slice(&builder.vertex_data);
+        queue.write_buffer(&self.vertex_buffer, 0, vertex_data_raw);
 
-        stg_vertex.copy_to_buffer(encoder, &self.vertex_buffer);
-        stg_index.copy_to_buffer(encoder, &self.index_buffer);
+        let index_data_raw: &[u8] = bytemuck::cast_slice(&builder.index_data);
+        queue.write_buffer(&self.index_buffer, 0, index_data_raw);
 
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Selections render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
+        let num_indices = builder.num_indices();
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &system.bind_group, &[]);

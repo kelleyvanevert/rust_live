@@ -1,4 +1,3 @@
-mod background_pass;
 mod buffer;
 mod code_pass;
 mod pass;
@@ -12,11 +11,18 @@ pub use widgets_pass::WidgetTexture;
 use crate::widget::WidgetManager;
 
 use self::{
-    background_pass::BackgroundPass, code_pass::CodePass, selections_pass::SelectionsPass,
-    system::SystemData, widgets_pass::WidgetsPass,
+    code_pass::CodePass, selections_pass::SelectionsPass, system::SystemData,
+    widgets_pass::WidgetsPass,
 };
 use live_editor_state::EditorState;
 use winit::dpi::PhysicalSize;
+
+const BACKGROUND_COLOR: wgpu::Color = wgpu::Color {
+    r: 243.0 / 255.0,
+    g: 242.0 / 255.0,
+    b: 240.0 / 255.0,
+    a: 1.,
+};
 
 pub struct Renderer<'a> {
     surface: wgpu::Surface,
@@ -26,7 +32,6 @@ pub struct Renderer<'a> {
 
     pub system: SystemData,
 
-    background_pass: BackgroundPass,
     code_pass: CodePass<'a>,
     widgets_pass: WidgetsPass,
     selections_pass: SelectionsPass,
@@ -75,7 +80,6 @@ impl<'a> Renderer<'a> {
 
         surface.configure(&device, &config);
 
-        let background_pass = BackgroundPass::new();
         let code_pass = CodePass::new(&device, &queue, &config);
         let system = SystemData::new(
             scale_factor,
@@ -94,7 +98,6 @@ impl<'a> Renderer<'a> {
             config,
 
             system,
-            background_pass,
             widgets_pass,
             code_pass,
             selections_pass,
@@ -145,35 +148,46 @@ impl<'a> Renderer<'a> {
 
         let view = frame.texture.create_view(&Default::default());
 
-        self.background_pass.draw(&view, &mut encoder);
+        {
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Background render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
 
-        self.widget_instances = self.code_pass.draw(
-            &self.device,
-            &self.queue,
-            &self.system,
-            &view,
-            editor_state,
-            &mut encoder,
-        );
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(BACKGROUND_COLOR),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
 
-        self.widgets_pass.draw(
-            &self.device,
-            &self.queue,
-            &self.system,
-            &view,
-            &self.widget_instances,
-            widget_manager,
-            &mut encoder,
-        );
+            self.widget_instances = self.code_pass.draw(
+                &self.device,
+                &self.queue,
+                &self.system,
+                editor_state,
+                &mut render_pass,
+            );
 
-        self.selections_pass.draw(
-            &self.device,
-            &self.queue,
-            &self.system,
-            &view,
-            editor_state,
-            &mut encoder,
-        );
+            self.widgets_pass.draw(
+                &self.device,
+                &self.queue,
+                &self.system,
+                &self.widget_instances,
+                widget_manager,
+                &mut render_pass,
+            );
+
+            self.selections_pass.draw(
+                &self.device,
+                &self.queue,
+                &self.system,
+                editor_state,
+                &mut render_pass,
+            );
+        }
 
         self.queue.submit([encoder.finish()]);
 

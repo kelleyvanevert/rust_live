@@ -7,8 +7,6 @@ use super::{
     widget_vertex::{WidgetQuadBufferBuilder, WidgetVertex},
 };
 
-use wgpu::TextureView;
-
 pub struct WidgetsPass {
     render_pipeline: wgpu::RenderPipeline,
     texture_bind_group_layout: wgpu::BindGroupLayout,
@@ -106,34 +104,43 @@ impl WidgetsPass {
         }
     }
 
-    pub fn draw(
-        &mut self,
+    pub fn draw<'pass>(
+        &'pass mut self,
         device: &wgpu::Device,
         queue: &wgpu::Queue,
-        system: &SystemData,
-        view: &TextureView,
+        system: &'pass SystemData,
+        // view: &TextureView,
         widget_instances: &[(usize, (f32, f32, f32, f32))],
         widget_manager: &mut WidgetManager,
-        encoder: &mut wgpu::CommandEncoder,
+        render_pass: &mut wgpu::RenderPass<'pass>,
     ) {
-        for group in widget_instances.group_by(|a, b| a.0 == b.0) {
-            let id = group[0].0;
-            let (min_x, min_y, max_x, max_y) = group[0].1;
+        let groups = widget_instances
+            .group_by(|a, b| a.0 == b.0)
+            .map(|group| {
+                let (id, quad) = group[0];
+                let (min_x, min_y, max_x, max_y) = quad;
 
-            // physical (multiplied by 2, hacky for now)
-            let width = (max_x - min_x).round() as usize * 2;
-            let height = (max_y - min_y).round() as usize * 2;
+                // physical (multiplied by 2, hacky for now)
+                let width = (max_x - min_x).round() as usize * 2;
+                let height = (max_y - min_y).round() as usize * 2;
 
-            let widget_texture = self.widget_textures.entry(id).or_insert_with(|| {
-                WidgetTexture::new(
-                    id,
-                    width,
-                    height,
-                    device,
-                    queue,
-                    &self.texture_bind_group_layout,
-                )
-            });
+                self.widget_textures.entry(id).or_insert_with(|| {
+                    WidgetTexture::new(
+                        id,
+                        width,
+                        height,
+                        device,
+                        queue,
+                        &self.texture_bind_group_layout,
+                    )
+                });
+
+                (id, widget_instances.iter().map(|i| i.1).collect::<Vec<_>>())
+            })
+            .collect::<Vec<_>>();
+
+        for (id, quads) in groups {
+            let widget_texture = self.widget_textures.get_mut(&id).unwrap();
 
             widget_manager.draw(id, widget_texture);
 
@@ -158,38 +165,31 @@ impl WidgetsPass {
 
             let mut widgets_builder = WidgetQuadBufferBuilder::new();
 
-            for &(_, quad) in group {
+            for quad in quads {
                 widgets_builder.push_quad(quad);
             }
 
-            let (stg_vertex, stg_index, widgets_num_indices) = widgets_builder.build(&device);
+            let vertex_data_raw: &[u8] = bytemuck::cast_slice(&widgets_builder.vertex_data);
+            queue.write_buffer(&widget_texture.vertex_buffer, 0, vertex_data_raw);
 
-            stg_vertex.copy_to_buffer(encoder, &widget_texture.vertex_buffer);
-            stg_index.copy_to_buffer(encoder, &widget_texture.index_buffer);
+            let index_data_raw: &[u8] = bytemuck::cast_slice(&widgets_builder.index_data);
+            queue.write_buffer(&widget_texture.index_buffer, 0, index_data_raw);
 
-            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                label: Some(&format!("Widget #{id} render pass")),
-                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                    view: &view,
-                    resolve_target: None,
+            widget_texture.num_indices = widgets_builder.num_indices();
+        }
 
-                    ops: wgpu::Operations {
-                        load: wgpu::LoadOp::Load,
-                        store: true,
-                    },
-                })],
-                depth_stencil_attachment: None,
-            });
-
-            render_pass.set_pipeline(&self.render_pipeline);
-            render_pass.set_bind_group(0, &system.bind_group, &[]);
-            render_pass.set_bind_group(1, &widget_texture.bind_group, &[]);
-            render_pass.set_vertex_buffer(0, widget_texture.vertex_buffer.slice(..));
-            render_pass.set_index_buffer(
-                widget_texture.index_buffer.slice(..),
-                wgpu::IndexFormat::Uint32,
-            );
-            render_pass.draw_indexed(0..widgets_num_indices, 0, 0..1);
+        for (_, widget_texture) in &self.widget_textures {
+            if widget_texture.num_indices > 0 {
+                render_pass.set_pipeline(&self.render_pipeline);
+                render_pass.set_bind_group(0, &system.bind_group, &[]);
+                render_pass.set_bind_group(1, &widget_texture.bind_group, &[]);
+                render_pass.set_vertex_buffer(0, widget_texture.vertex_buffer.slice(..));
+                render_pass.set_index_buffer(
+                    widget_texture.index_buffer.slice(..),
+                    wgpu::IndexFormat::Uint32,
+                );
+                render_pass.draw_indexed(0..widget_texture.num_indices, 0, 0..1);
+            }
         }
     }
 }
@@ -204,6 +204,7 @@ pub struct WidgetTexture {
 
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
+    num_indices: u32,
 }
 
 impl WidgetTexture {
@@ -299,6 +300,7 @@ impl WidgetTexture {
 
             vertex_buffer,
             index_buffer,
+            num_indices: 0,
         }
     }
 

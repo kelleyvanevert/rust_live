@@ -1,7 +1,3 @@
-use wgpu::util::{BufferInitDescriptor, DeviceExt};
-
-use crate::util::size_of_slice;
-
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct WidgetVertex {
@@ -32,9 +28,9 @@ impl WidgetVertex {
 }
 
 pub struct WidgetQuadBufferBuilder {
-    vertex_data: Vec<WidgetVertex>,
-    index_data: Vec<u32>,
-    current_quad: u32,
+    pub vertex_data: Vec<WidgetVertex>,
+    pub index_data: Vec<u32>,
+    pub current_quad: u32,
 }
 
 impl WidgetQuadBufferBuilder {
@@ -77,42 +73,7 @@ impl WidgetQuadBufferBuilder {
         self.current_quad += 1;
     }
 
-    pub fn build(self, device: &wgpu::Device) -> (StagingBuffer, StagingBuffer, u32) {
-        (
-            StagingBuffer::new(device, &self.vertex_data, false),
-            StagingBuffer::new(device, &self.index_data, true),
-            self.index_data.len() as u32,
-        )
-    }
-}
-
-pub struct StagingBuffer {
-    buffer: wgpu::Buffer,
-    size: wgpu::BufferAddress,
-}
-
-impl StagingBuffer {
-    pub fn new<T: bytemuck::Pod + Sized>(
-        device: &wgpu::Device,
-        data: &[T],
-        is_index_buffer: bool,
-    ) -> StagingBuffer {
-        StagingBuffer {
-            buffer: device.create_buffer_init(&BufferInitDescriptor {
-                contents: bytemuck::cast_slice(data),
-                usage: wgpu::BufferUsages::COPY_SRC
-                    | if is_index_buffer {
-                        wgpu::BufferUsages::INDEX
-                    } else {
-                        wgpu::BufferUsages::empty()
-                    },
-                label: Some("Staging Buffer"),
-            }),
-            size: size_of_slice(data) as wgpu::BufferAddress,
-        }
-    }
-
-    pub fn copy_to_buffer(&self, encoder: &mut wgpu::CommandEncoder, other: &wgpu::Buffer) {
-        encoder.copy_buffer_to_buffer(&self.buffer, 0, other, 0, self.size)
+    pub fn num_indices(&self) -> u32 {
+        self.index_data.len() as u32
     }
 }
