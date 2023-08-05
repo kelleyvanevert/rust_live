@@ -1,0 +1,17 @@
+[package]
+name = "shader_tests"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+winit = { path = "../winit" }
+# this is the latest winit + self-patched version of [https://github.com/amrbashir/winit/tree/dnd-cursor-location]
+bytemuck = { version = "1.12", features = ["derive"] }
+cgmath = "0.18.0"
+clap = { version = "4.3.19", features = ["derive"] }
+env_logger = "0.10.0"
+palette = "0.7.2"
+pollster = "0.3.0"
+rfd = "0.11.4"
+wgpu = "0.17.0"
+wgpu_text = "0.8.3"
