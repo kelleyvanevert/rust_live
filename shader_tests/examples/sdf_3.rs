@@ -410,14 +410,20 @@ impl Renderer {
 #[repr(C)]
 #[derive(Copy, Clone, Debug, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct Vertex {
-    position: [f32; 3],
+    position: [f32; 4],
+    center: [f32; 2],
+    radius: f32,
+    trash: f32,
 }
 
 impl Vertex {
     const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
 
-    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
-        0 => Float32x3,
+    const ATTRIBS: [wgpu::VertexAttribute; 4] = wgpu::vertex_attr_array![
+        0 => Float32x4,
+        1 => Float32x2,
+        2 => Float32,
+        3 => Float32,
     ];
 
     fn desc() -> wgpu::VertexBufferLayout<'static> {
@@ -427,12 +433,6 @@ impl Vertex {
             array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
             step_mode: wgpu::VertexStepMode::Vertex,
             attributes: &Self::ATTRIBS,
-        }
-    }
-
-    fn from(x: f32, y: f32) -> Self {
-        Self {
-            position: [x, y, 0.0],
         }
     }
 }
@@ -463,15 +463,44 @@ impl VertexBufferBuilder {
     //     ]);
     // }
 
-    fn push_quad(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32) {
+    fn push_circle_instance(&mut self, center: [f32; 2], radius: f32) {
         let num_vertices = self.vertex_data.len() as u32;
 
+        // the division by 2.0 is kinda unfortunate, but, there seems to be a logical/physical problem there...
+        let min_x = (center[0] - (radius + 10.0)) / 2.0;
+        let max_x = (center[0] + (radius + 10.0)) / 2.0;
+        let min_y = (center[1] - (radius + 10.0)) / 2.0;
+        let max_y = (center[1] + (radius + 10.0)) / 2.0;
+
+        let trash = 0.0;
+
         self.vertex_data.extend(&[
-            Vertex::from(min_x, min_y),
-            Vertex::from(max_x, min_y),
-            Vertex::from(max_x, max_y),
-            Vertex::from(min_x, max_y),
+            Vertex {
+                position: [min_x, min_y, 0.0, 1.0],
+                center,
+                radius,
+                trash,
+            },
+            Vertex {
+                position: [max_x, min_y, 0.0, 1.0],
+                center,
+                radius,
+                trash,
+            },
+            Vertex {
+                position: [max_x, max_y, 0.0, 1.0],
+                center,
+                radius,
+                trash,
+            },
+            Vertex {
+                position: [min_x, max_y, 0.0, 1.0],
+                center,
+                radius,
+                trash,
+            },
         ]);
+
         self.index_data.extend(&[
             num_vertices + 0,
             num_vertices + 1,
@@ -488,51 +517,10 @@ impl VertexBufferBuilder {
     }
 }
 
-#[repr(C)]
-#[derive(Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
-struct Instance {
-    center: [f32; 2],
-    radius: f32,
-    trash: f32,
-}
-
-impl Instance {
-    // const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
-
-    fn desc() -> wgpu::VertexBufferLayout<'static> {
-        use std::mem;
-
-        wgpu::VertexBufferLayout {
-            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
-            step_mode: wgpu::VertexStepMode::Instance,
-            attributes: &[
-                wgpu::VertexAttribute {
-                    offset: 0,
-                    // While our vertex shader only uses locations 0, and 1 now, in later tutorials we'll
-                    // be using 2, 3, and 4, for Vertex. We'll start at slot 5 not conflict with them later
-                    shader_location: 1,
-                    format: wgpu::VertexFormat::Float32x2,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 2]>() as wgpu::BufferAddress,
-                    shader_location: 2,
-                    format: wgpu::VertexFormat::Float32,
-                },
-                wgpu::VertexAttribute {
-                    offset: mem::size_of::<[f32; 3]>() as wgpu::BufferAddress,
-                    shader_location: 3,
-                    format: wgpu::VertexFormat::Float32,
-                },
-            ],
-        }
-    }
-}
-
 pub struct SdfPass {
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
-    instance_buffer: wgpu::Buffer,
 }
 
 impl SdfPass {
@@ -544,7 +532,7 @@ impl SdfPass {
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("./sdf_2.wgsl").into()),
+            source: wgpu::ShaderSource::Wgsl(include_str!("./sdf_3.wgsl").into()),
         });
 
         let render_pipeline_layout =
@@ -560,7 +548,7 @@ impl SdfPass {
             vertex: wgpu::VertexState {
                 module: &shader,
                 entry_point: "vs_main", // 1.
-                buffers: &[Vertex::desc(), Instance::desc()],
+                buffers: &[Vertex::desc()],
             },
             fragment: Some(wgpu::FragmentState {
                 // 3.
@@ -608,40 +596,10 @@ impl SdfPass {
             mapped_at_creation: false,
         });
 
-        let instances = vec![
-            Instance {
-                center: [300.0, 300.0],
-                radius: 60.0,
-                trash: 0.0,
-            },
-            Instance {
-                center: [500.0, 300.0],
-                radius: 120.0,
-                trash: 0.0,
-            },
-            Instance {
-                center: [300.0, 500.0],
-                radius: 180.0,
-                trash: 0.0,
-            },
-            Instance {
-                center: [500.0, 500.0],
-                radius: 20.0,
-                trash: 0.0,
-            },
-        ];
-
-        let instance_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
-            label: Some("Index Buffer"),
-            contents: bytemuck::cast_slice(&instances),
-            usage: wgpu::BufferUsages::VERTEX,
-        });
-
         Self {
             render_pipeline,
             vertex_buffer,
             index_buffer,
-            instance_buffer,
         }
     }
 
@@ -652,13 +610,15 @@ impl SdfPass {
         _device: &wgpu::Device,
         queue: &wgpu::Queue,
         system: &'pass SystemData,
-        state: &State,
+        _state: &State,
         render_pass: &mut wgpu::RenderPass<'pass>,
     ) {
         let mut builder = VertexBufferBuilder::new();
 
-        // need to be big enough, and try to be small only for performance (of running the fragment shader)
-        builder.push_quad(0.0, 0.0, state.width, state.height);
+        builder.push_circle_instance([300.0, 300.0], 60.0);
+        builder.push_circle_instance([500.0, 300.0], 120.0);
+        builder.push_circle_instance([300.0, 500.0], 180.0);
+        builder.push_circle_instance([500.0, 500.0], 20.0);
 
         let vertex_data_raw: &[u8] = bytemuck::cast_slice(&builder.vertex_data);
         queue.write_buffer(&self.vertex_buffer, 0, vertex_data_raw);
@@ -671,7 +631,6 @@ impl SdfPass {
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &system.bind_group, &[]);
         render_pass.set_vertex_buffer(0, self.vertex_buffer.slice(..));
-        render_pass.set_vertex_buffer(1, self.instance_buffer.slice(..));
         render_pass.set_index_buffer(self.index_buffer.slice(..), wgpu::IndexFormat::Uint32); // 1.
         render_pass.draw_indexed(0..num_indices, 0, 0..4); // 2.
     }
