@@ -145,10 +145,12 @@ impl State {
 */
 pub struct SystemData {
     pub scale_factor: f32,
+    pub vars_uniform: VarsUniform,
     pub system_uniform: SystemUniform,
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
-    pub buffer: wgpu::Buffer,
+    pub vars_buffer: wgpu::Buffer,
+    pub system_buffer: wgpu::Buffer,
 }
 
 impl SystemData {
@@ -158,12 +160,20 @@ impl SystemData {
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Self {
+        let mut vars_uniform = VarsUniform { time: 0.0 };
+
         let mut system_uniform = SystemUniform::new(config.width as f32, config.height as f32);
         system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
 
-        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+        let system_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
             label: Some("System buffer"),
             contents: bytemuck::cast_slice(&[system_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let vars_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Vars buffer"),
+            contents: bytemuck::cast_slice(&[vars_uniform]),
             usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
         });
 
@@ -180,16 +190,16 @@ impl SystemData {
                     },
                     count: None,
                 },
-                // wgpu::BindGroupLayoutEntry {
-                //     binding: 1,
-                //     visibility: wgpu::ShaderStages::FRAGMENT,
-                //     ty: wgpu::BindingType::Texture {
-                //         multisampled: false,
-                //         sample_type: wgpu::TextureSampleType::Uint,
-                //         view_dimension: wgpu::TextureViewDimension::D2,
-                //     },
-                //     count: None,
-                // },
+                wgpu::BindGroupLayoutEntry {
+                    binding: 1,
+                    visibility: wgpu::ShaderStages::FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
             ],
         });
 
@@ -199,40 +209,48 @@ impl SystemData {
             entries: &[
                 wgpu::BindGroupEntry {
                     binding: 0,
-                    resource: buffer.as_entire_binding(),
+                    resource: system_buffer.as_entire_binding(),
                 },
-                // wgpu::BindGroupEntry {
-                //     binding: 1,
-                //     resource: wgpu::BindingResource::TextureView(&texture_view),
-                // },
+                wgpu::BindGroupEntry {
+                    binding: 1,
+                    resource: vars_buffer.as_entire_binding(),
+                },
             ],
             label: None,
         });
 
         Self {
             scale_factor,
+            vars_uniform,
             system_uniform,
             bind_group_layout,
             bind_group,
-            buffer,
+            vars_buffer,
+            system_buffer,
         }
     }
 
     fn update_buffer(&mut self, queue: &wgpu::Queue) {
         queue.write_buffer(
-            &self.buffer,
+            &self.system_buffer,
             0,
             bytemuck::cast_slice(&[self.system_uniform]),
+        );
+
+        queue.write_buffer(
+            &self.vars_buffer,
+            0,
+            bytemuck::cast_slice(&[self.vars_uniform]),
         );
     }
 
     pub fn update_for_state(&mut self, queue: &wgpu::Queue, state: &State) {
-        self.system_uniform.dim = [state.width, state.height];
+        // self.system_uniform.dim = [state.width, state.height];
 
         self.system_uniform
             .update(self.scale_factor, (state.width, state.height));
 
-        self.system_uniform.time = state.t0.elapsed().as_secs_f32();
+        self.vars_uniform.time = state.t0.elapsed().as_secs_f32();
 
         self.update_buffer(&queue);
     }
@@ -240,20 +258,25 @@ impl SystemData {
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct VarsUniform {
+    time: f32,
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SystemUniform {
     view_proj: [[f32; 4]; 4],
-
-    time: f32,
-    // frameno: f32,
-    dim: [f32; 2],
+    // time: f32,
+    // // frameno: f32,
+    // dim: [f32; 2],
 }
 
 impl SystemUniform {
     fn new(width: f32, height: f32) -> Self {
         Self {
             view_proj: cgmath::Matrix4::identity().into(),
-            time: 0.0,
-            dim: [width, height],
+            // time: 0.0,
+            // dim: [width, height],
         }
     }
 
