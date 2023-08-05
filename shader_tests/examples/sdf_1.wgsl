@@ -46,7 +46,7 @@ var<uniform> vars: VarsUniform;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sd = distance(vars.center, in.position.xy) - in.radius;
 
-    let x = step(4.0, abs(sd));
+    let x = smoothstep(4.0, 5.0, abs(sd));
 
     return vec4<f32>(x, x, x, 1.0);
 }
