@@ -340,6 +340,7 @@ impl Renderer {
 
         self.surface.configure(&self.device, &self.config);
         self.system.resize(&self.queue, &self.config);
+        self.sdf_pass.resize(&self.queue, &self.config);
     }
 
     #[allow(unused)]
