@@ -1,7 +1,9 @@
 #![feature(let_chains)]
 #![feature(slice_group_by)]
 
+use cgmath::SquareMatrix;
 use std::time::{Duration, Instant, SystemTime};
+use wgpu::util::DeviceExt;
 use winit::dpi::{LogicalSize, PhysicalSize, Size};
 use winit::event::KeyEvent;
 use winit::event_loop::EventLoopBuilder;
@@ -31,7 +33,7 @@ pub fn main() {
         .build(&event_loop)
         .unwrap();
 
-    let mut state = State::new();
+    let mut state = State::new(&window);
 
     let mut renderer = pollster::block_on(Renderer::new(&window));
 
@@ -54,6 +56,7 @@ pub fn main() {
                     ..
                 } => {
                     renderer.resize(size);
+                    state.resize(&window);
                 }
                 WindowEvent::CloseRequested => *control_flow = ControlFlow::Exit,
                 WindowEvent::KeyboardInput {
@@ -99,17 +102,167 @@ pub fn main() {
     });
 }
 
-struct State {
+pub struct State {
     t0: Instant,
     frameno: usize,
+
+    width: f32,
+    height: f32,
 }
 
 impl State {
-    fn new() -> Self {
+    fn new(window: &Window) -> Self {
         Self {
             t0: Instant::now(),
             frameno: 0,
+            width: window
+                .inner_size()
+                .to_logical::<f32>(window.scale_factor())
+                .width as f32,
+            height: window
+                .inner_size()
+                .to_logical::<f32>(window.scale_factor())
+                .height as f32,
         }
+    }
+
+    fn resize(&mut self, window: &Window) {
+        self.width = window
+            .inner_size()
+            .to_logical::<f32>(window.scale_factor())
+            .width as f32;
+
+        self.height = window
+            .inner_size()
+            .to_logical::<f32>(window.scale_factor())
+            .height as f32;
+    }
+}
+
+/**
+   System global stuff, like the projection matrix and coordinate stuff
+*/
+pub struct SystemData {
+    pub scale_factor: f32,
+    pub system_uniform: SystemUniform,
+    pub bind_group_layout: wgpu::BindGroupLayout,
+    pub bind_group: wgpu::BindGroup,
+    pub buffer: wgpu::Buffer,
+}
+
+impl SystemData {
+    pub fn new(
+        scale_factor: f32,
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        config: &wgpu::SurfaceConfiguration,
+    ) -> Self {
+        let mut system_uniform = SystemUniform::new();
+        system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
+
+        let buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("System buffer"),
+            contents: bytemuck::cast_slice(&[system_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
+
+        let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+            label: None,
+            entries: &[
+                wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Uniform,
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                },
+                // wgpu::BindGroupLayoutEntry {
+                //     binding: 1,
+                //     visibility: wgpu::ShaderStages::FRAGMENT,
+                //     ty: wgpu::BindingType::Texture {
+                //         multisampled: false,
+                //         sample_type: wgpu::TextureSampleType::Uint,
+                //         view_dimension: wgpu::TextureViewDimension::D2,
+                //     },
+                //     count: None,
+                // },
+            ],
+        });
+
+        // Create bind group
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            entries: &[
+                wgpu::BindGroupEntry {
+                    binding: 0,
+                    resource: buffer.as_entire_binding(),
+                },
+                // wgpu::BindGroupEntry {
+                //     binding: 1,
+                //     resource: wgpu::BindingResource::TextureView(&texture_view),
+                // },
+            ],
+            label: None,
+        });
+
+        Self {
+            scale_factor,
+            system_uniform,
+            bind_group_layout,
+            bind_group,
+            buffer,
+        }
+    }
+
+    pub fn resize(&mut self, queue: &wgpu::Queue, config: &wgpu::SurfaceConfiguration) {
+        self.system_uniform.update(
+            self.scale_factor,
+            (config.width as f32, config.height as f32),
+        );
+
+        queue.write_buffer(
+            &self.buffer,
+            0,
+            bytemuck::cast_slice(&[self.system_uniform]),
+        );
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct SystemUniform {
+    view_proj: [[f32; 4]; 4],
+}
+
+impl SystemUniform {
+    fn new() -> Self {
+        Self {
+            view_proj: cgmath::Matrix4::identity().into(),
+        }
+    }
+
+    fn update(&mut self, sf: f32, (width, height): (f32, f32)) {
+        //             (1,1)
+        //        (0,0)
+        // (-1,-1)
+        let transform = cgmath::Matrix4::from_translation(cgmath::vec3(-1.0, 1.0, 0.0));
+        // (0, 0)
+        //        (1,1)
+        //             (2,2)
+        let transform = transform
+            * cgmath::Matrix4::from_nonuniform_scale(
+                sf * (2.0 / width),
+                sf * (2.0 / height) * -1.0,
+                1.0,
+            );
+        // (0,0)
+        //      (300,200)
+        //              (600,400)
+
+        self.view_proj = transform.into();
     }
 }
 
@@ -119,6 +272,9 @@ struct Renderer {
     config: wgpu::SurfaceConfiguration,
     device: wgpu::Device,
     queue: wgpu::Queue,
+
+    system: SystemData,
+    sdf_pass: SdfPass,
 }
 
 impl Renderer {
@@ -162,12 +318,19 @@ impl Renderer {
 
         surface.configure(&device, &config);
 
+        let system = SystemData::new(scale_factor, &device, &queue, &config);
+
+        let sdf_pass = SdfPass::new(&device, &queue, &config, &system);
+
         Self {
             scale_factor,
             surface,
             config,
             device,
             queue,
+
+            system,
+            sdf_pass,
         }
     }
 
@@ -176,9 +339,7 @@ impl Renderer {
         self.config.height = size.height.max(1);
 
         self.surface.configure(&self.device, &self.config);
-        // self.system.resize(&self.queue, &self.config);
-        // self.code_pass.resize(&self.queue, &self.config);
-        // self.selections_pass.resize(&self.queue, &self.config);
+        self.system.resize(&self.queue, &self.config);
     }
 
     #[allow(unused)]
@@ -201,41 +362,143 @@ impl Renderer {
             .get_current_texture()
             .expect("Failed to acquire next surface texture!");
 
-        let view = frame.texture.create_view(&Default::default());
+        {
+            let background_color = wgpu::Color {
+                r: 243.0 / 255.0,
+                g: 242.0 / 255.0,
+                b: 240.0 / 255.0,
+                a: 1.,
+            };
 
-        // self.background_pass.draw(&view, &mut encoder);
+            let view = frame.texture.create_view(&Default::default());
 
-        // self.widget_instances = self.code_pass.draw(
-        //     &self.device,
-        //     &self.queue,
-        //     &self.system,
-        //     &view,
-        //     editor_state,
-        //     &mut encoder,
-        // );
+            let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                label: Some("Background render pass"),
+                color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                    view: &view,
+                    resolve_target: None,
 
-        // self.widgets_pass.draw(
-        //     &self.device,
-        //     &self.queue,
-        //     &self.system,
-        //     &view,
-        //     &self.widget_instances,
-        //     widget_manager,
-        //     &mut encoder,
-        // );
+                    ops: wgpu::Operations {
+                        load: wgpu::LoadOp::Clear(background_color),
+                        store: true,
+                    },
+                })],
+                depth_stencil_attachment: None,
+            });
 
-        // self.selections_pass.draw(
-        //     &self.device,
-        //     &self.queue,
-        //     &self.system,
-        //     &view,
-        //     editor_state,
-        //     &mut encoder,
-        // );
-
+            self.sdf_pass.draw(
+                &self.device,
+                &self.queue,
+                &self.system,
+                state,
+                &mut render_pass,
+            );
+        }
         self.queue.submit([encoder.finish()]);
 
         frame.present();
+    }
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Debug)]
+pub struct Vertex {
+    position: [f32; 3],
+    // color: [f32; 4],
+}
+
+unsafe impl bytemuck::Pod for Vertex {}
+unsafe impl bytemuck::Zeroable for Vertex {}
+
+impl Vertex {
+    const SIZE: wgpu::BufferAddress = std::mem::size_of::<Self>() as wgpu::BufferAddress;
+
+    const ATTRIBS: [wgpu::VertexAttribute; 1] = wgpu::vertex_attr_array![
+        0 => Float32x3,
+        // 1 => Float32x4,
+    ];
+
+    fn desc() -> wgpu::VertexBufferLayout<'static> {
+        use std::mem;
+
+        wgpu::VertexBufferLayout {
+            array_stride: mem::size_of::<Self>() as wgpu::BufferAddress,
+            step_mode: wgpu::VertexStepMode::Vertex,
+            attributes: &Self::ATTRIBS,
+        }
+    }
+
+    fn from((x, y): (f32, f32)) -> Self {
+        Self {
+            position: [x, y, 0.0],
+        }
+    }
+}
+
+struct VertexBufferBuilder {
+    vertex_data: Vec<Vertex>,
+    index_data: Vec<u32>,
+}
+
+impl VertexBufferBuilder {
+    fn new() -> Self {
+        Self {
+            vertex_data: Vec::new(),
+            index_data: Vec::new(),
+        }
+    }
+
+    fn push_triangle(&mut self, a: (f32, f32), b: (f32, f32), c: (f32, f32)) {
+        let num_vertices = self.vertex_data.len() as u32;
+
+        self.vertex_data.extend(&[
+            //
+            Vertex::from(a),
+            Vertex::from(b),
+            Vertex::from(c),
+        ]);
+
+        self.index_data.extend(&[
+            //
+            num_vertices + 0,
+            num_vertices + 1,
+            num_vertices + 2,
+        ]);
+    }
+
+    // pub fn push_quad(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32, color: [f32; 4]) {
+    //     self.vertex_data.extend(&[
+    //         Vertex {
+    //             position: [min_x, min_y, 0.0],
+    //             color,
+    //         },
+    //         Vertex {
+    //             position: [max_x, min_y, 0.0],
+    //             color,
+    //         },
+    //         Vertex {
+    //             position: [max_x, max_y, 0.0],
+    //             color,
+    //         },
+    //         Vertex {
+    //             position: [min_x, max_y, 0.0],
+    //             color,
+    //         },
+    //     ]);
+    //     self.index_data.extend(&[
+    //         self.current_quad * 4 + 0,
+    //         self.current_quad * 4 + 1,
+    //         self.current_quad * 4 + 2,
+    //         //
+    //         self.current_quad * 4 + 0,
+    //         self.current_quad * 4 + 2,
+    //         self.current_quad * 4 + 3,
+    //     ]);
+    //     self.current_quad += 1;
+    // }
+
+    pub fn num_indices(&self) -> u32 {
+        self.index_data.len() as u32
     }
 }
 
@@ -250,7 +513,7 @@ impl SdfPass {
         device: &wgpu::Device,
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
-        // system: &SystemData,
+        system: &SystemData,
     ) -> Self {
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("Shader"),
@@ -272,18 +535,17 @@ impl SdfPass {
                 entry_point: "vs_main", // 1.
                 buffers: &[Vertex::desc()],
             },
-            fragment: None,
-            // fragment: Some(wgpu::FragmentState {
-            //     // 3.
-            //     module: &shader,
-            //     entry_point: "fs_main",
-            //     targets: &[Some(wgpu::ColorTargetState {
-            //         // 4.
-            //         format: config.format,
-            //         write_mask: wgpu::ColorWrites::ALL,
-            //         blend: Some(wgpu::BlendState::ALPHA_BLENDING),
-            //     })],
-            // }),
+            fragment: Some(wgpu::FragmentState {
+                // 3.
+                module: &shader,
+                entry_point: "fs_main",
+                targets: &[Some(wgpu::ColorTargetState {
+                    // 4.
+                    format: config.format,
+                    write_mask: wgpu::ColorWrites::ALL,
+                    blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                })],
+            }),
             primitive: wgpu::PrimitiveState {
                 topology: wgpu::PrimitiveTopology::TriangleList, // 1.
                 strip_index_format: None,
@@ -328,71 +590,29 @@ impl SdfPass {
 
     pub fn resize(&mut self, _queue: &wgpu::Queue, _config: &wgpu::SurfaceConfiguration) {}
 
-    pub fn draw(
-        &mut self,
-        device: &wgpu::Device,
-        _queue: &wgpu::Queue,
-        // system: &SystemData,
-        view: &wgpu::TextureView,
-        // editor_state: &EditorState,
-        encoder: &mut wgpu::CommandEncoder,
+    pub fn draw<'pass>(
+        &'pass mut self,
+        _device: &wgpu::Device,
+        queue: &wgpu::Queue,
+        system: &'pass SystemData,
+        state: &State,
+        render_pass: &mut wgpu::RenderPass<'pass>,
     ) {
-        let sf = system.scale_factor;
+        let mut builder = VertexBufferBuilder::new();
 
-        let mut builder = QuadBufferBuilder::new();
+        builder.push_triangle(
+            (50.0, 50.0),
+            (state.width - 50.0, 50.0),
+            (50.0, state.height - 50.0),
+        );
 
-        for LineSelection {
-            row,
-            col_start,
-            col_end,
-        } in editor_state.visual_selections()
-        {
-            let (x_start, y) = system.pos_to_px(Pos {
-                row,
-                col: col_start,
-            });
+        let vertex_data_raw: &[u8] = bytemuck::cast_slice(&builder.vertex_data);
+        queue.write_buffer(&self.vertex_buffer, 0, vertex_data_raw);
 
-            let (x_end, _) = system.pos_to_px(Pos { row, col: col_end });
+        let index_data_raw: &[u8] = bytemuck::cast_slice(&builder.index_data);
+        queue.write_buffer(&self.index_buffer, 0, index_data_raw);
 
-            builder.push_quad(
-                x_start,
-                y,
-                x_end + 6.0 / sf,
-                y + system.char_size.1 / sf,
-                [0.0, 0.0, 0.0, 0.2],
-            );
-        }
-
-        for caret in editor_state.caret_positions() {
-            let (cx, cy) = system.pos_to_px(caret);
-
-            builder.push_quad(
-                cx,
-                cy,
-                cx + 6.0 / sf,
-                cy + system.char_size.1 / sf,
-                [0.0, 0.0, 0.0, 1.0],
-            );
-        }
-
-        let (stg_vertex, stg_index, num_indices) = builder.build(&device);
-
-        stg_vertex.copy_to_buffer(encoder, &self.vertex_buffer);
-        stg_index.copy_to_buffer(encoder, &self.index_buffer);
-
-        let mut render_pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            label: Some("Selections render pass"),
-            color_attachments: &[Some(wgpu::RenderPassColorAttachment {
-                view: &view,
-                resolve_target: None,
-
-                ops: wgpu::Operations {
-                    load: wgpu::LoadOp::Load,
-                    store: true,
-                },
-            })],
-            depth_stencil_attachment: None,
-        });
+        let num_indices = builder.num_indices();
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &system.bind_group, &[]);
