@@ -166,13 +166,13 @@ impl SystemData {
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        let mut vars_uniform = VarsUniform {
+        let vars_uniform = VarsUniform {
             time: 0.0,
             radius: 100.0,
             center: [300.0, 300.0],
         };
 
-        let mut system_uniform = SystemUniform::new(config.width as f32, config.height as f32);
+        let mut system_uniform = SystemUniform::new();
         system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
 
         let system_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -284,7 +284,7 @@ pub struct SystemUniform {
 }
 
 impl SystemUniform {
-    fn new(width: f32, height: f32) -> Self {
+    fn new() -> Self {
         Self {
             view_proj: cgmath::Matrix4::identity().into(),
             // time: 0.0,

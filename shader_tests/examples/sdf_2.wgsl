@@ -32,9 +32,10 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
     out.position = system.view_proj * vec4<f32>(model.position, 1.0);
-    // out.position += vec4<f32>(instance.offset, 0.0, 0.0);
+
     out.offset = instance.offset;
     out.radius = instance.radius;
+
     return out;
 }
 
@@ -55,7 +56,7 @@ var<uniform> vars: VarsUniform;
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
     let sd = distance(vars.center, (in.position.xy - in.offset)) - in.radius;
 
-    let x = step(4.0, abs(sd));
+    let x = smoothstep(4.0, 5.0, abs(sd));
 
-    return vec4<f32>(x, x, x, 1.0 - x);
+    return vec4<f32>(0.0, 0.0, 0.0, 1.0 - x);
 }

@@ -163,13 +163,13 @@ impl SystemData {
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        let mut vars_uniform = VarsUniform {
+        let vars_uniform = VarsUniform {
             time: 0.0,
             radius: 100.0,
             center: [300.0, 300.0],
         };
 
-        let mut system_uniform = SystemUniform::new(config.width as f32, config.height as f32);
+        let mut system_uniform = SystemUniform::new();
         system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
 
         let system_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
@@ -275,17 +275,12 @@ pub struct VarsUniform {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SystemUniform {
     view_proj: [[f32; 4]; 4],
-    // time: f32,
-    // // frameno: f32,
-    // dim: [f32; 2],
 }
 
 impl SystemUniform {
-    fn new(width: f32, height: f32) -> Self {
+    fn new() -> Self {
         Self {
             view_proj: cgmath::Matrix4::identity().into(),
-            // time: 0.0,
-            // dim: [width, height],
         }
     }
 
@@ -505,18 +500,18 @@ impl VertexBufferBuilder {
         }
     }
 
-    fn push_triangle(&mut self, vertices: [Vertex; 3]) {
-        let num_vertices = self.vertex_data.len() as u32;
+    // fn push_triangle(&mut self, vertices: [Vertex; 3]) {
+    //     let num_vertices = self.vertex_data.len() as u32;
 
-        self.vertex_data.extend(vertices);
+    //     self.vertex_data.extend(vertices);
 
-        self.index_data.extend(&[
-            //
-            num_vertices + 0,
-            num_vertices + 1,
-            num_vertices + 2,
-        ]);
-    }
+    //     self.index_data.extend(&[
+    //         //
+    //         num_vertices + 0,
+    //         num_vertices + 1,
+    //         num_vertices + 2,
+    //     ]);
+    // }
 
     fn push_quad(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32) {
         let num_vertices = self.vertex_data.len() as u32;
@@ -666,17 +661,17 @@ impl SdfPass {
         let instances = vec![
             Instance {
                 offset: [0.0, 0.0],
-                radius: 50.0,
+                radius: 60.0,
                 trash: 0.0,
             },
             Instance {
                 offset: [200.0, 0.0],
-                radius: 70.0,
+                radius: 120.0,
                 trash: 0.0,
             },
             Instance {
                 offset: [0.0, 200.0],
-                radius: 120.0,
+                radius: 180.0,
                 trash: 0.0,
             },
             Instance {
