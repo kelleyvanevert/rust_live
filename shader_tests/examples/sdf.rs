@@ -145,12 +145,15 @@ impl State {
 */
 pub struct SystemData {
     pub scale_factor: f32,
+
     pub vars_uniform: VarsUniform,
+    pub vars_buffer: wgpu::Buffer,
+
     pub system_uniform: SystemUniform,
+    pub system_buffer: wgpu::Buffer,
+
     pub bind_group_layout: wgpu::BindGroupLayout,
     pub bind_group: wgpu::BindGroup,
-    pub vars_buffer: wgpu::Buffer,
-    pub system_buffer: wgpu::Buffer,
 }
 
 impl SystemData {
@@ -160,7 +163,11 @@ impl SystemData {
         _queue: &wgpu::Queue,
         config: &wgpu::SurfaceConfiguration,
     ) -> Self {
-        let mut vars_uniform = VarsUniform { time: 0.0 };
+        let mut vars_uniform = VarsUniform {
+            time: 0.0,
+            radius: 100.0,
+            center: [300.0, 300.0],
+        };
 
         let mut system_uniform = SystemUniform::new(config.width as f32, config.height as f32);
         system_uniform.update(scale_factor, (config.width as f32, config.height as f32));
@@ -260,6 +267,8 @@ impl SystemData {
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct VarsUniform {
     time: f32,
+    radius: f32,
+    center: [f32; 2],
 }
 
 #[repr(C)]

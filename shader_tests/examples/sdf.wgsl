@@ -15,7 +15,7 @@ struct VertexInput {
 };
 
 struct VertexOutput {
-    @builtin(position) clip_position: vec4<f32>,
+    @builtin(position) position: vec4<f32>,
     // @location(0) color: vec4<f32>,
 };
 
@@ -25,7 +25,7 @@ fn vs_main(
 ) -> VertexOutput {
     var out: VertexOutput;
     // out.color = model.color;
-    out.clip_position = system.view_proj * vec4<f32>(model.position, 1.0);
+    out.position = system.view_proj * vec4<f32>(model.position, 1.0);
     return out;
 }
 
@@ -34,6 +34,8 @@ fn vs_main(
 
 struct VarsUniform {
     time: f32,
+    radius: f32,
+    center: vec2<f32>,
 };
 
 @group(0)
@@ -42,7 +44,9 @@ var<uniform> vars: VarsUniform;
 
 @fragment
 fn fs_main(in: VertexOutput) -> @location(0) vec4<f32> {
-    // return in.color;
-    let x = vars.time % 1.0;
+    let sd = distance(vars.center, in.position.xy) - vars.radius;
+
+    let x = step(4.0, abs(sd));
+
     return vec4<f32>(x, x, x, 1.0);
 }
