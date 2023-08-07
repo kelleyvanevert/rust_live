@@ -1,0 +1,9 @@
+[package]
+name = "test_fundsp"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+fundsp = "0.15.0"
+cpal = "0.15.2"
+anyhow = "1.0.72"
