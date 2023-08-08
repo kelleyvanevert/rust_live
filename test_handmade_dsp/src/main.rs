@@ -11,52 +11,78 @@ fn main() {
         wave_table.push((TAU * n as f32 / wave_table_size as f32).sin());
     }
 
-    let mut osc = WaveTableOsc::new(441_000, wave_table);
+    let f = 220.0;
 
-    osc.set_frequency(440.0);
+    let sdf = [1, 0, 1, 0, 1, 0, 1, 0, 1]
+        .into_iter()
+        .enumerate()
+        .map(|(harmonic, mul)| WaveTableOsc::sine(f * harmonic as f32).amplify(mul as f32))
+        .fold(WaveTableOsc::sine(f).amplify(0.0), |a, b| {
+            //
+            let h = a.mix(b).into_iter();
+            let h = a.cloned().mix(b);
+            todo!()
+        });
+
+    let osc = WaveTableOsc::sine(440.0);
 
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+
+    let osc = osc
+        .mix(WaveTableOsc::sine(440.0 * (3.0)))
+        .amplify(2.0)
+        .mix(WaveTableOsc::sine(440.0 * (3.0)).amplify(1.0));
 
     let _res = stream_handle.play_raw(osc.convert_samples());
 
     std::thread::sleep(std::time::Duration::from_millis(100_000));
 }
 
-// 0.. S
-// 0.. tau
-// 1 .. 0 .. 1 [len 64]
-
 struct WaveTableOsc {
-    sample_rate: u32,
     wave_table: Vec<f32>,
     index: f32,
     index_increment: f32,
 }
 
 impl WaveTableOsc {
-    fn new(sample_rate: u32, wave_table: Vec<f32>) -> Self {
+    const SAMPLE_RATE: u32 = 441_000;
+
+    fn new(wave_table: Vec<f32>) -> Self {
         Self {
-            sample_rate,
             wave_table,
             index: 0.0,
             index_increment: 0.0,
         }
     }
 
-    fn set_frequency(&mut self, frequency: f32) {
-        self.index_increment = frequency * self.wave_table.len() as f32 / self.sample_rate as f32;
+    fn sine(frequency_hz: f32) -> Self {
+        let wave_table_size = 64;
+        let mut wave_table: Vec<f32> = Vec::with_capacity(wave_table_size);
+
+        for n in 0..wave_table_size {
+            wave_table.push((TAU * n as f32 / wave_table_size as f32).sin());
+        }
+
+        let mut osc = WaveTableOsc::new(wave_table);
+
+        osc.set_frequency(frequency_hz);
+
+        osc
     }
 
-    fn get_sample(&mut self) -> f32 {
-        let sample = self.lerp();
-        self.index += self.index_increment;
-        self.index %= self.wave_table.len() as f32;
+    fn set_frequency(&mut self, frequency: f32) {
+        self.index_increment = frequency * self.wave_table.len() as f32 / Self::SAMPLE_RATE as f32;
+    }
+
+    fn get_next_sample(&mut self) -> f32 {
+        let sample = self.get_sample(self.index);
+        self.index = (self.index + self.index_increment) % self.wave_table.len() as f32;
 
         sample
     }
 
-    fn lerp(&self) -> f32 {
-        let index_trunc = self.index as usize;
+    fn get_sample(&self, index: f32) -> f32 {
+        let index_trunc = index as usize;
         let index_next = (index_trunc + 1) % self.wave_table.len();
 
         let index_next_weight = self.index - (index_trunc as f32);
@@ -71,7 +97,7 @@ impl Iterator for WaveTableOsc {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        return Some(self.get_sample());
+        return Some(self.get_next_sample());
     }
 }
 
@@ -81,7 +107,7 @@ impl Source for WaveTableOsc {
     }
 
     fn sample_rate(&self) -> u32 {
-        self.sample_rate
+        Self::SAMPLE_RATE
     }
 
     fn current_frame_len(&self) -> Option<usize> {
