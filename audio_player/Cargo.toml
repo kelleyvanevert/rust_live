@@ -5,3 +5,12 @@ edition = "2021"
 
 [dependencies]
 symphonia = { version = "0.5.3", features = ["all"] }
+env_logger = "0.10.0"
+pollster = "0.3.0"
+wgpu = "0.17.0"
+bytemuck = { version = "1.12", features = ["derive"] }
+winit = { path = "../winit" }
+# this is the latest winit + self-patched version of [https://github.com/amrbashir/winit/tree/dnd-cursor-location]
+palette = "0.7.2"
+rfd = "0.11.4"
+cgmath = "0.18.0"
