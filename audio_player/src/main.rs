@@ -1,6 +1,10 @@
 #![feature(let_chains)]
 #![feature(slice_group_by)]
 
+use epaint::{
+    pos2, tessellate_shapes, ClippedPrimitive, ClippedShape, Color32, Primitive, RectShape, Shape,
+    Stroke, TessellationOptions,
+};
 use read_audio_file::read_audio_file;
 use std::time::Instant;
 use ui::ui;

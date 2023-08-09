@@ -1,4 +1,11 @@
 use cgmath::SquareMatrix;
+use epaint::emath::Align2;
+use epaint::text::{FontData, FontDefinitions};
+use epaint::textures::TextureOptions;
+use epaint::{
+    hex_color, pos2, tessellate_shapes, ClippedShape, Color32, FontFamily, FontId, FontImage,
+    Fonts, Primitive, Rect, Rgba, Shape, Stroke, TessellationOptions, TextureManager,
+};
 use std::time::{Duration, Instant, SystemTime};
 use wgpu::util::DeviceExt;
 use winit::dpi::{LogicalSize, Size};
@@ -454,24 +461,64 @@ struct VertexBufferBuilder {
 
 impl VertexBufferBuilder {
     fn new() -> Self {
+        // let s = Shape::text();
+
+        let shape = Shape::Vec(vec![
+            Shape::rect_filled(
+                Rect {
+                    min: pos2(200.0, 200.0),
+                    max: pos2(300.0, 300.0),
+                },
+                10.0,
+                hex_color!("#E8D44D"),
+            ),
+            Shape::circle_stroke(pos2(200.0, 200.0), 50.0, Stroke::new(6.0, Color32::BLACK)),
+            // s,
+        ]);
+
+        let clipped_primitives = tessellate_shapes(
+            2.0,
+            TessellationOptions::default(),
+            [1024, 1024],
+            vec![],
+            vec![ClippedShape(shape.visual_bounding_rect(), shape)],
+        );
+
+        let mut vertex_data = vec![];
+        let mut index_data = vec![];
+
+        for clipped_primitive in clipped_primitives {
+            if let Primitive::Mesh(mesh) = clipped_primitive.primitive {
+                let len = vertex_data.len() as u32;
+                vertex_data.extend(mesh.vertices.iter().map(|v| {
+                    let color: Rgba = v.color.into();
+                    Vertex {
+                        position: [v.pos.x, v.pos.y, 0.0, 1.0],
+                        color: color.to_array(),
+                    }
+                }));
+                index_data.extend(mesh.indices.iter().map(|i| len + i));
+            }
+        }
+
         Self {
-            vertex_data: Vec::new(),
-            index_data: Vec::new(),
+            vertex_data,
+            index_data,
         }
     }
 
-    fn push_triangle(&mut self, vertices: [Vertex; 3]) {
-        let num_vertices = self.vertex_data.len() as u32;
+    // fn push_triangle(&mut self, vertices: [Vertex; 3]) {
+    //     let num_vertices = self.vertex_data.len() as u32;
 
-        self.vertex_data.extend(vertices);
+    //     self.vertex_data.extend(vertices);
 
-        self.index_data.extend(&[
-            //
-            num_vertices + 0,
-            num_vertices + 1,
-            num_vertices + 2,
-        ]);
-    }
+    //     self.index_data.extend(&[
+    //         //
+    //         num_vertices + 0,
+    //         num_vertices + 1,
+    //         num_vertices + 2,
+    //     ]);
+    // }
 
     // pub fn push_quad(&mut self, min_x: f32, min_y: f32, max_x: f32, max_y: f32, color: [f32; 4]) {
     //     self.vertex_data.extend(&[
@@ -510,6 +557,8 @@ impl VertexBufferBuilder {
 }
 
 pub struct SdfPass {
+    fonts: Fonts,
+    texture_manager: TextureManager,
     render_pipeline: wgpu::RenderPipeline,
     vertex_buffer: wgpu::Buffer,
     index_buffer: wgpu::Buffer,
@@ -576,19 +625,46 @@ impl SdfPass {
 
         let vertex_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Vertex Buffer"),
-            size: Vertex::SIZE * 400,
+            size: Vertex::SIZE * 800,
             usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
         let index_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: Some("Index Buffer"),
-            size: Vertex::SIZE * 400,
+            size: Vertex::SIZE * 800,
             usage: wgpu::BufferUsages::INDEX | wgpu::BufferUsages::COPY_DST,
             mapped_at_creation: false,
         });
 
+        let mut font_defs = FontDefinitions::default();
+
+        font_defs.font_data.insert(
+            "Fira Code".to_owned(),
+            FontData::from_static(include_bytes!(
+                "../../editor/res/fonts/FiraCode-Regular.ttf"
+            )),
+        );
+
+        font_defs
+            .families
+            .get_mut(&FontFamily::Monospace)
+            .unwrap()
+            .insert(0, "Fira Code".to_owned());
+
+        let fonts = Fonts::new(2.0, 2000, font_defs);
+
+        let mut texture_manager = TextureManager::default();
+
+        let font_texture_id = texture_manager.alloc(
+            "font_texture".into(),
+            epaint::ImageData::Font(FontImage::new([2000, 2000])),
+            TextureOptions::default(), // epaint::AlphaImage::new([0, 0]).into(),
+        );
+
         Self {
+            fonts,
+            texture_manager,
             render_pipeline,
             vertex_buffer,
             index_buffer,
@@ -605,21 +681,80 @@ impl SdfPass {
         state: &State,
         render_pass: &mut wgpu::RenderPass<'pass>,
     ) {
-        let mut builder = VertexBufferBuilder::new();
+        self.fonts.begin_frame(2.0, 2000);
 
-        builder.push_triangle([
-            Vertex::from(50.0, 50.0, [0.0, 0.0, 0.0, 1.0]),
-            Vertex::from(state.width - 50.0, 50.0, [0.0, 0.0, 0.0, 1.0]),
-            Vertex::from(50.0, state.height - 50.0, [0.0, 0.0, 0.0, 1.0]),
+        let s = Shape::text(
+            &self.fonts,
+            pos2(300.0, 300.0),
+            Align2::LEFT_TOP,
+            "JS",
+            FontId {
+                size: 30.0,
+                family: epaint::FontFamily::Monospace,
+            },
+            Color32::BLACK,
+        );
+
+        let shape = Shape::Vec(vec![
+            Shape::rect_filled(
+                Rect {
+                    min: pos2(200.0, 200.0),
+                    max: pos2(300.0, 300.0),
+                },
+                10.0,
+                hex_color!("#E8D44D"),
+            ),
+            Shape::circle_stroke(pos2(200.0, 200.0), 50.0, Stroke::new(6.0, Color32::BLACK)),
+            s,
         ]);
 
-        let vertex_data_raw: &[u8] = bytemuck::cast_slice(&builder.vertex_data);
+        let clipped_primitives = tessellate_shapes(
+            2.0,
+            TessellationOptions::default(),
+            [2000, 2000],
+            self.fonts.texture_atlas().lock().prepared_discs(), // ?????
+            vec![ClippedShape(shape.visual_bounding_rect(), shape)],
+        );
+
+        let mut vertex_data = vec![];
+        let mut index_data = vec![];
+
+        for clipped_primitive in clipped_primitives {
+            if let Primitive::Mesh(mesh) = clipped_primitive.primitive {
+                println!("{:?}", mesh.texture_id);
+
+                let len = vertex_data.len() as u32;
+                vertex_data.extend(mesh.vertices.iter().map(|v| {
+                    let color: Rgba = v.color.into();
+                    Vertex {
+                        position: [v.pos.x, v.pos.y, 0.0, 1.0],
+                        color: color.to_array(),
+                    }
+                }));
+                index_data.extend(mesh.indices.iter().map(|i| len + i));
+            }
+        }
+
+        // let mut builder = VertexBufferBuilder::new();
+
+        // builder.push_triangle([
+        //     Vertex::from(50.0, 50.0, [0.0, 0.0, 0.0, 1.0]),
+        //     Vertex::from(state.width - 50.0, 50.0, [0.0, 0.0, 0.0, 1.0]),
+        //     Vertex::from(50.0, state.height - 50.0, [0.0, 0.0, 0.0, 1.0]),
+        // ]);
+
+        // if let Some(d) = self.fonts.font_image_delta() {
+        //     println!("new font data {}", d.image.);
+        //     //
+        // }
+
+        let vertex_data_raw: &[u8] = bytemuck::cast_slice(&vertex_data);
         queue.write_buffer(&self.vertex_buffer, 0, vertex_data_raw);
 
-        let index_data_raw: &[u8] = bytemuck::cast_slice(&builder.index_data);
+        let index_data_raw: &[u8] = bytemuck::cast_slice(&index_data);
         queue.write_buffer(&self.index_buffer, 0, index_data_raw);
 
-        let num_indices = builder.num_indices();
+        let num_indices = index_data.len() as u32;
 
         render_pass.set_pipeline(&self.render_pipeline);
         render_pass.set_bind_group(0, &system.bind_group, &[]);
