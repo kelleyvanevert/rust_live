@@ -7,27 +7,27 @@ use std::{
 pub struct Osc {
     sample_rate: u64,
     frequency: f32,
-    triangleness: f32,
+    squareness: f32,
     rad: f32,
 
     target_frequency: f32,
-    target_triangleness: f32,
+    target_squareness: f32,
 
     front: (Sender<(f32, f32)>, Receiver<(f32, f32)>),
 }
 
 impl Osc {
-    pub fn sine(frequency: f32, triangleness: f32) -> Self {
+    pub fn sine(frequency: f32, squareness: f32) -> Self {
         let front = mpsc::channel();
 
         Self {
-            sample_rate: 441_000,
+            sample_rate: 100_000,
             frequency,
-            triangleness,
+            squareness,
             rad: 0.0,
 
             target_frequency: frequency,
-            target_triangleness: triangleness,
+            target_squareness: squareness,
 
             front,
         }
@@ -35,7 +35,7 @@ impl Osc {
 
     fn get_next_sample(&mut self) -> f32 {
         if let Ok(target) = self.front.1.try_recv() {
-            (self.frequency, self.triangleness) = target;
+            (self.target_frequency, self.squareness) = target;
         }
 
         let diff = self.target_frequency - self.frequency;
@@ -50,15 +50,31 @@ impl Osc {
         // as a sine
         let sin = self.rad.sin();
 
-        // as a triangle
-        let x = (self.rad + PI / 2.0) / TAU;
-        let tri = 4.0 * (x - (x + 0.5).floor()).abs() - 1.0;
+        // // as a triangle
+        // let x = (self.rad + PI / 2.0) / TAU;
+        // let tri = 4.0 * (x - (x + 0.5).floor()).abs() - 1.0;
 
-        (tri * self.triangleness) + (sin * (1.0 - self.triangleness))
+        // // as a square
+        // let sq = sin.signum();
+
+        // as a smoothed square
+        let d = 1.0 - ease_cubic_in_out(0.3 + 0.6 * self.squareness); // between 0 and 1
+        let smooth_sq: f32 = fast_math::atan(sin / d) / fast_math::atan(1.0 / d);
+
+        // sin
+        smooth_sq
     }
 
     pub fn get_freq_sender(&self) -> Sender<(f32, f32)> {
         self.front.0.clone()
+    }
+}
+
+fn ease_cubic_in_out(x: f32) -> f32 {
+    if x < 0.5 {
+        4.0 * x.powi(3)
+    } else {
+        1.0 - (-2.0 * x + 2.0).powi(3) / 2.0
     }
 }
 
