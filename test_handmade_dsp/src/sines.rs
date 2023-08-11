@@ -2,7 +2,7 @@ use rodio::{OutputStream, Source};
 use std::f32::consts::TAU;
 
 #[allow(unused)]
-pub fn sines() {
+pub fn sines(secs: u64) {
     let wave_table_size = 64;
     let mut wave_table: Vec<f32> = Vec::with_capacity(wave_table_size);
 
@@ -24,7 +24,7 @@ pub fn sines() {
 
     let _res = stream_handle.play_raw(osc.convert_samples());
 
-    std::thread::sleep(std::time::Duration::from_millis(100_000));
+    std::thread::sleep(std::time::Duration::from_secs(secs));
 }
 
 struct WaveTableOsc {

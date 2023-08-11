@@ -2,5 +2,6 @@ mod generating;
 mod sines;
 
 fn main() {
-    generating::generating();
+    sines::sines(2);
+    generating::generating(2);
 }

@@ -1,20 +1,21 @@
 use rodio::{OutputStream, Source};
 use std::f32::consts::TAU;
 
-pub fn generating() {
-    let osc = Osc::new(440.0 * 0.1)
+#[allow(unused)]
+pub fn generating(secs: u64) {
+    let osc = Osc::sine(440.0 * 0.1)
         .amplify(1.0)
-        .mix(Osc::new(440.0 * 0.1).amplify(1.0))
-        .mix(Osc::new(440.0 * 0.2).amplify(1.0))
-        .mix(Osc::new(440.0 * 0.3).amplify(1.0))
-        .mix(Osc::new(440.0 * 1.0).amplify(0.7))
-        .mix(Osc::new(440.0 * 2.0).amplify(0.2));
+        .mix(Osc::sine(440.0 * 0.1).amplify(1.0))
+        .mix(Osc::sine(440.0 * 0.2).amplify(1.0))
+        .mix(Osc::sine(440.0 * 0.3).amplify(1.0))
+        .mix(Osc::sine(440.0 * 1.0).amplify(0.7))
+        .mix(Osc::sine(440.0 * 2.0).amplify(0.2));
 
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
     let _res = stream_handle.play_raw(osc.convert_samples());
 
-    std::thread::sleep(std::time::Duration::from_millis(100_000));
+    std::thread::sleep(std::time::Duration::from_secs(secs));
 }
 
 struct Osc {
@@ -24,7 +25,7 @@ struct Osc {
 }
 
 impl Osc {
-    fn new(frequency: f32) -> Self {
+    fn sine(frequency: f32) -> Self {
         Self {
             sample_rate: 441_000,
             frequency,
