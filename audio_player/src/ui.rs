@@ -6,6 +6,7 @@ use epaint::{
     hex_color, pos2, tessellate_shapes, ClippedShape, Color32, FontFamily, FontId, FontImage,
     Fonts, Primitive, Rect, Rgba, Shape, Stroke, TessellationOptions, TextureManager,
 };
+use rodio::{OutputStream, Source};
 use std::time::{Duration, Instant, SystemTime};
 use wgpu::util::DeviceExt;
 use winit::dpi::{LogicalSize, Size};
@@ -20,11 +21,24 @@ use winit::{
     window::WindowBuilder,
 };
 
+use crate::generating::Osc;
+
 /*
     This example showcases that indeed all the outputs of the vertex shader are interpolated inside the triangle before being passed to the fragment shader. (And there's no such thing as sending 'triangles' + data, you always indeed really send vertices + data.)
 */
 pub fn ui() {
     env_logger::init();
+
+    let osc = Osc::sine(440.0, 0.5);
+
+    let change_freq = osc.get_freq_sender();
+
+    let (_stream, stream_handle) = OutputStream::try_default().unwrap();
+
+    let _res = stream_handle.play_raw(osc.convert_samples());
+
+    let mut width = 900.0;
+    let mut height = 600.0;
 
     let event_loop = EventLoopBuilder::new().build();
     let window = WindowBuilder::new()
@@ -32,10 +46,7 @@ pub fn ui() {
         .with_fullsize_content_view(true)
         .with_titlebar_transparent(true)
         .with_active(true)
-        .with_inner_size(Size::Logical(LogicalSize {
-            width: 900.0,
-            height: 600.0,
-        }))
+        .with_inner_size(Size::Logical(LogicalSize { width, height }))
         .with_resizable(true)
         .build(&event_loop)
         .unwrap();
@@ -62,6 +73,10 @@ pub fn ui() {
                     new_inner_size: &mut _,
                     ..
                 } => {
+                    let s = window.inner_size().to_logical::<f64>(window.scale_factor());
+                    width = s.width;
+                    height = s.height;
+
                     state.resize(&window);
                     renderer.update(&state);
                 }
@@ -78,6 +93,14 @@ pub fn ui() {
                     }
                     _ => {}
                 },
+                WindowEvent::CursorMoved { position, .. } => {
+                    let p = position.to_logical::<f64>(window.scale_factor());
+
+                    let f = 220.0 + 440.0 * (p.x / width) as f32;
+                    let t = (p.y / height) as f32;
+
+                    let _ = change_freq.send((f, t));
+                }
                 _ => (),
             },
             winit::event::Event::RedrawRequested(_) => {
@@ -721,7 +744,7 @@ impl SdfPass {
 
         for clipped_primitive in clipped_primitives {
             if let Primitive::Mesh(mesh) = clipped_primitive.primitive {
-                println!("{:?}", mesh.texture_id);
+                // println!("{:?}", mesh.texture_id);
 
                 let len = vertex_data.len() as u32;
                 vertex_data.extend(mesh.vertices.iter().map(|v| {

@@ -9,6 +9,7 @@ use read_audio_file::read_audio_file;
 use std::time::Instant;
 use ui::ui;
 
+mod generating;
 mod read_audio_file;
 mod ui;
 
