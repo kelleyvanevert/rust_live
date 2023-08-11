@@ -11,27 +11,17 @@ fn main() {
         wave_table.push((TAU * n as f32 / wave_table_size as f32).sin());
     }
 
-    let f = 220.0;
-
-    let sdf = [1, 0, 1, 0, 1, 0, 1, 0, 1]
-        .into_iter()
-        .enumerate()
-        .map(|(harmonic, mul)| WaveTableOsc::sine(f * harmonic as f32).amplify(mul as f32))
-        .fold(WaveTableOsc::sine(f).amplify(0.0), |a, b| {
-            //
-            let h = a.mix(b).into_iter();
-            let h = a.cloned().mix(b);
-            todo!()
-        });
-
     let osc = WaveTableOsc::sine(440.0);
 
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
     let osc = osc
-        .mix(WaveTableOsc::sine(440.0 * (3.0)))
-        .amplify(2.0)
-        .mix(WaveTableOsc::sine(440.0 * (3.0)).amplify(1.0));
+        .mix(WaveTableOsc::sine(440.0 * 0.1).amplify(1.0))
+        .mix(WaveTableOsc::sine(440.0 * 0.1).amplify(1.0))
+        .mix(WaveTableOsc::sine(440.0 * 0.2).amplify(1.0))
+        .mix(WaveTableOsc::sine(440.0 * 0.3).amplify(1.0))
+        .mix(WaveTableOsc::sine(440.0 * 1.0).amplify(0.7))
+        .mix(WaveTableOsc::sine(440.0 * 2.0).amplify(0.2));
 
     let _res = stream_handle.play_raw(osc.convert_samples());
 
