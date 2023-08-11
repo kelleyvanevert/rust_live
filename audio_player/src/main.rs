@@ -1,5 +1,6 @@
 #![feature(let_chains)]
 #![feature(slice_group_by)]
+#![feature(duration_constants)]
 
 #[allow(unused)]
 use music::music;
@@ -12,6 +13,7 @@ mod generating;
 mod music;
 mod read_audio_file;
 mod theremin;
+mod util;
 
 fn main() {
     // theremin();
