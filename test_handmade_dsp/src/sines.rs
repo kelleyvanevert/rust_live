@@ -3,8 +3,6 @@ use std::f32::consts::TAU;
 
 #[allow(unused)]
 pub fn sines() {
-    println!("Hello, world!");
-
     let wave_table_size = 64;
     let mut wave_table: Vec<f32> = Vec::with_capacity(wave_table_size);
 

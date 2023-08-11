@@ -1,5 +1,6 @@
+mod generating;
 mod sines;
 
 fn main() {
-    sines::sines();
+    generating::generating();
 }
