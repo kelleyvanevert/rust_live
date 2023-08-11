@@ -6,28 +6,88 @@ use std::{
 
 use crate::util::ease_cubic_in_out;
 
-pub enum Event {
-    SetFrequency(f32),
-    SetVolume(f32),
-    SetSquareness(f32),
+#[derive(Debug, Clone, Copy)]
+pub struct Params {
+    pub volume: Option<f32>,
+    pub frequency: Option<f32>,
+    pub squareness: Option<f32>,
 }
 
+impl Default for Params {
+    fn default() -> Self {
+        Self {
+            volume: None,
+            frequency: None,
+            squareness: None,
+        }
+    }
+}
+
+impl Params {
+    pub fn freq(mut self, frequency: f32) -> Self {
+        self.frequency = Some(frequency);
+        self
+    }
+
+    pub fn vol(mut self, volume: f32) -> Self {
+        self.volume = Some(volume);
+        self
+    }
+
+    pub fn sq(mut self, squareness: f32) -> Self {
+        self.squareness = Some(squareness);
+        self
+    }
+}
+
+pub fn silent() -> Params {
+    Params::default().vol(0.0)
+}
+
+impl From<f32> for Params {
+    fn from(frequency: f32) -> Self {
+        Self::default().freq(frequency)
+    }
+}
+
+pub fn lerp_params(x: f32, a: Params, b: Params) -> Params {
+    Params {
+        volume: lerp_option(x, a.volume, b.volume),
+        frequency: lerp_option(x, a.frequency, b.frequency),
+        squareness: lerp_option(x, a.squareness, b.squareness),
+    }
+}
+
+fn lerp_option(x: f32, a: Option<f32>, b: Option<f32>) -> Option<f32> {
+    match (a, b) {
+        (None, None) => None,
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (Some(a), Some(b)) => Some(a + x * (b - a)),
+    }
+}
+
+const SAMPLE_RATE: u32 = 44_100;
+
 pub struct Osc {
-    sample_rate: u64,
     volume: f32,
     frequency: f32,
     squareness: f32,
     rad: f32,
-    front: (Sender<Event>, Receiver<Event>),
+    front: (Sender<Params>, Receiver<Params>),
 }
 
 impl Osc {
-    pub fn sine(frequency: f32, squareness: f32) -> Self {
+    pub fn sine<P: Into<Params>>(params: P) -> Self {
         let front = mpsc::channel();
 
+        let params: Params = params.into();
+        let volume = params.volume.unwrap_or(0.5);
+        let frequency = params.frequency.unwrap_or(440.0);
+        let squareness = params.squareness.unwrap_or(0.5);
+
         Self {
-            sample_rate: 44_100,
-            volume: 0.5,
+            volume,
             frequency,
             squareness,
             rad: 0.0,
@@ -35,17 +95,24 @@ impl Osc {
         }
     }
 
+    fn apply(&mut self, params: Params) {
+        if let Some(volume) = params.volume {
+            self.volume = volume;
+        }
+        if let Some(frequency) = params.frequency {
+            self.frequency = frequency;
+        }
+        if let Some(squareness) = params.squareness {
+            self.squareness = squareness;
+        }
+    }
+
     fn get_next_sample(&mut self) -> f32 {
-        while let Ok(ev) = self.front.1.try_recv() {
-            match ev {
-                Event::SetFrequency(frequency) => self.frequency = frequency,
-                Event::SetVolume(volume) => self.volume = volume,
-                Event::SetSquareness(squareness) => self.squareness = squareness,
-                _ => {}
-            }
+        while let Ok(params) = self.front.1.try_recv() {
+            self.apply(params);
         }
 
-        self.rad += self.frequency * (TAU / self.sample_rate as f32);
+        self.rad += self.frequency * (TAU / SAMPLE_RATE as f32);
         self.rad %= TAU;
 
         // as a sine
@@ -66,7 +133,7 @@ impl Osc {
         smooth_sq * self.volume
     }
 
-    pub fn frontend(&self) -> Sender<Event> {
+    pub fn frontend(&self) -> Sender<Params> {
         self.front.0.clone()
     }
 }
@@ -75,7 +142,7 @@ impl Iterator for Osc {
     type Item = f32;
 
     fn next(&mut self) -> Option<Self::Item> {
-        return Some(self.get_next_sample());
+        Some(self.get_next_sample())
     }
 }
 
@@ -85,7 +152,43 @@ impl Source for Osc {
     }
 
     fn sample_rate(&self) -> u32 {
-        self.sample_rate as u32
+        SAMPLE_RATE
+    }
+
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+
+    fn total_duration(&self) -> Option<std::time::Duration> {
+        None
+    }
+}
+
+pub struct Mix {
+    inputs: Vec<Osc>,
+}
+
+impl Mix {
+    pub fn new(inputs: Vec<Osc>) -> Self {
+        Self { inputs }
+    }
+}
+
+impl Iterator for Mix {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        Some(self.inputs.iter_mut().map(|s| s.next().unwrap()).sum())
+    }
+}
+
+impl Source for Mix {
+    fn channels(&self) -> u16 {
+        1
+    }
+
+    fn sample_rate(&self) -> u32 {
+        SAMPLE_RATE
     }
 
     fn current_frame_len(&self) -> Option<usize> {
