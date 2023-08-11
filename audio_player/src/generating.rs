@@ -1,19 +1,22 @@
 use rodio::Source;
 use std::{
-    f32::consts::{PI, TAU},
+    f32::consts::TAU,
     sync::mpsc::{self, Receiver, Sender},
 };
 
+pub enum Event {
+    SetFrequency(f32),
+    SetVolume(f32),
+    SetSquareness(f32),
+}
+
 pub struct Osc {
     sample_rate: u64,
+    volume: f32,
     frequency: f32,
     squareness: f32,
     rad: f32,
-
-    target_frequency: f32,
-    target_squareness: f32,
-
-    front: (Sender<(f32, f32)>, Receiver<(f32, f32)>),
+    front: (Sender<Event>, Receiver<Event>),
 }
 
 impl Osc {
@@ -21,27 +24,23 @@ impl Osc {
         let front = mpsc::channel();
 
         Self {
-            sample_rate: 100_000,
+            sample_rate: 44_100,
+            volume: 0.5,
             frequency,
             squareness,
             rad: 0.0,
-
-            target_frequency: frequency,
-            target_squareness: squareness,
-
             front,
         }
     }
 
     fn get_next_sample(&mut self) -> f32 {
-        if let Ok(target) = self.front.1.try_recv() {
-            (self.target_frequency, self.squareness) = target;
-        }
-
-        let diff = self.target_frequency - self.frequency;
-        if diff.abs() > 0.01 {
-            // "smoothing" XD
-            self.frequency += 100.0 * diff / (self.sample_rate as f32);
+        while let Ok(ev) = self.front.1.try_recv() {
+            match ev {
+                Event::SetFrequency(frequency) => self.frequency = frequency,
+                Event::SetVolume(volume) => self.volume = volume,
+                Event::SetSquareness(squareness) => self.squareness = squareness,
+                _ => {}
+            }
         }
 
         self.rad += self.frequency * (TAU / self.sample_rate as f32);
@@ -62,10 +61,10 @@ impl Osc {
         let smooth_sq: f32 = fast_math::atan(sin / d) / fast_math::atan(1.0 / d);
 
         // sin
-        smooth_sq
+        smooth_sq * self.volume
     }
 
-    pub fn get_freq_sender(&self) -> Sender<(f32, f32)> {
+    pub fn frontend(&self) -> Sender<Event> {
         self.front.0.clone()
     }
 }

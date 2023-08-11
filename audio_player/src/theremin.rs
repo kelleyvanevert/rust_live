@@ -21,17 +21,17 @@ use winit::{
     window::WindowBuilder,
 };
 
-use crate::generating::Osc;
+use crate::generating::{Event, Osc};
 
 /*
     This example showcases that indeed all the outputs of the vertex shader are interpolated inside the triangle before being passed to the fragment shader. (And there's no such thing as sending 'triangles' + data, you always indeed really send vertices + data.)
 */
-pub fn ui() {
+pub fn theremin() {
     env_logger::init();
 
     let osc = Osc::sine(440.0, 0.5);
 
-    let change_freq = osc.get_freq_sender();
+    let frontend = osc.frontend();
 
     let (_stream, stream_handle) = OutputStream::try_default().unwrap();
 
@@ -99,7 +99,8 @@ pub fn ui() {
                     let f = 220.0 + 440.0 * (p.x / width) as f32;
                     let t = (p.y / height) as f32;
 
-                    let _ = change_freq.send((f, t));
+                    let _ = frontend.send(Event::SetFrequency(f));
+                    let _ = frontend.send(Event::SetSquareness(t));
                 }
                 _ => (),
             },
