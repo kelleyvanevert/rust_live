@@ -1,5 +1,5 @@
 [package]
-name = "audio_player"
+name = "audio_lang"
 version = "0.1.0"
 edition = "2021"
 
@@ -16,6 +16,7 @@ rfd = "0.11.4"
 cgmath = "0.18.0"
 epaint = { version = "0.22.0", features = ["color-hex"] }
 color-hex = "0.2.0"
-rodio = "0.17.1"
 fast-math = "0.1.1"
 itertools = "0.11.0"
+cpal = "0.15.2"
+anyhow = "1.0.72"
