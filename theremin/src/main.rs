@@ -16,11 +16,11 @@ mod theremin;
 mod util;
 
 fn main() {
-    // theremin();
+    theremin();
 
     // read();
 
-    music();
+    // music();
 }
 
 #[allow(unused)]

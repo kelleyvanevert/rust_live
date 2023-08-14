@@ -1,5 +1,5 @@
 [package]
-name = "audio_player"
+name = "theremin"
 version = "0.1.0"
 edition = "2021"
 
