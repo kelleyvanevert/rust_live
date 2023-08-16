@@ -1,0 +1,15 @@
+[package]
+name = "egui_example"
+version = "0.1.0"
+authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
+edition = "2021"
+
+[dependencies]
+egui_wgpu_backend = "0.25"
+chrono = "0.4.26"
+pollster = "0.2"
+egui = "0.22"
+egui_winit_platform = "0.19"
+wgpu = "0.17"
+winit = { version = "0.28.6", features = ["x11"] }
+egui_demo_lib = "0.22"
