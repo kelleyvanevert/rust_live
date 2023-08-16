@@ -1,22 +1,32 @@
 use egui::{
-    epaint::Shadow, hex_color, vec2, Context, FontId, Label, Layout, RichText, Sense, Stroke,
-    WidgetText,
+    epaint::Shadow, hex_color, vec2, Context, FontId, Label, Layout, Response, RichText, Sense,
+    Stroke, Ui, Vec2, Widget, WidgetText,
 };
 
-pub struct App {}
+pub struct App<'a> {
+    editors: Vec<&'a str>,
+    current_editor: usize,
+}
 
-impl App {
+impl<'a> App<'a> {
     pub fn new(ctx: &Context) -> Self {
         setup_custom_fonts(ctx);
 
-        Self {}
+        Self {
+            editors: vec![
+                "exp_1.live".into(),
+                "Untitled-1".into(),
+                "Untitled-2".into(),
+            ],
+            current_editor: 0,
+        }
     }
 
     pub fn ui(&mut self, ctx: &Context) {
         let my_frame = egui::containers::Frame {
-            inner_margin: egui::style::Margin::from(0.),
-            outer_margin: egui::style::Margin::from(0.),
-            rounding: egui::Rounding::from(0.),
+            inner_margin: 0.0.into(),
+            outer_margin: 0.0.into(),
+            rounding: 0.0.into(),
             shadow: Shadow::NONE,
             fill: hex_color!("#FAF9F8"),
             stroke: egui::Stroke::NONE,
@@ -25,7 +35,7 @@ impl App {
         egui::CentralPanel::default()
             .frame(my_frame)
             .show(ctx, |ui| {
-                // The central panel the region left after adding TopPanel's and SidePanel's
+                ui.spacing_mut().item_spacing = Vec2::ZERO;
 
                 ui.allocate_ui_with_layout(
                     vec2(f32::INFINITY, 54.0),
@@ -38,12 +48,18 @@ impl App {
                         cross_align: egui::Align::Center,
                     },
                     |ui| {
-                        ui.spacing_mut().item_spacing = vec2(16., 0.);
+                        ui.spacing_mut().item_spacing = vec2(16.0, 0.0);
                         ui.add_space(92.);
 
-                        ui.add(tab_button("exp_1.live".into(), &mut true));
-                        ui.add(tab_button("Untitled-1".into(), &mut false));
-                        ui.add(tab_button("Untitled-2".into(), &mut false));
+                        for (i, &filename) in self.editors.iter().enumerate() {
+                            let btn = ui.add(TabButton::new(filename, self.current_editor == i));
+                            if btn.clicked() {
+                                self.current_editor = i;
+                            }
+                        }
+                        // ui.add(TabButton::new("exp_1.live",true));
+                        // ui.add(TabButton::new("Untitled-1",false));
+                        // ui.add(TabButton::new("Untitled-2",false));
                     },
                 );
 
@@ -129,8 +145,22 @@ pub fn dash(height: f32) -> impl egui::Widget + 'static {
     }
 }
 
-pub fn tab_button(label: String, selected: &mut bool) -> impl egui::Widget + '_ {
-    move |ui: &mut egui::Ui| {
+pub struct TabButton {
+    text: WidgetText,
+    selected: bool,
+}
+
+impl TabButton {
+    pub fn new(text: impl Into<WidgetText>, selected: bool) -> Self {
+        Self {
+            text: text.into(),
+            selected,
+        }
+    }
+}
+
+impl Widget for TabButton {
+    fn ui(self, ui: &mut Ui) -> Response {
         // Widget code can be broken up in four steps:
         //  1. Decide a size for the widget
         //  2. Allocate space for it
@@ -142,9 +172,8 @@ pub fn tab_button(label: String, selected: &mut bool) -> impl egui::Widget + '_ 
         // 1. Deciding widget size:
         // You can query the `ui` how much space is available,
         // but in this example we have a fixed size widget based on the height of a standard button:
-        let text = egui::WidgetText::from(label);
 
-        let text = text.into_galley(
+        let text = self.text.into_galley(
             ui,
             Some(false),
             ui.available_width() - 2. * padding.x,
@@ -159,13 +188,13 @@ pub fn tab_button(label: String, selected: &mut bool) -> impl egui::Widget + '_ 
         // 2. Allocating space:
         // This is where we get a region of the screen assigned.
         // We also tell the Ui to sense clicks in the allocated region.
-        let (rect, mut response) = ui.allocate_at_least(desired_size, egui::Sense::click());
+        let (rect, response) = ui.allocate_at_least(desired_size, egui::Sense::click());
 
-        // 3. Interact: Time to check for clicks!
-        if response.clicked() {
-            *selected = !*selected;
-            response.mark_changed(); // report back that the value changed
-        }
+        // // 3. Interact: Time to check for clicks!
+        // if response.clicked() {
+        //     *selected = !*selected;
+        //     response.mark_changed(); // report back that the value changed
+        // }
 
         // Attach some meta-data to the response which can be used by screen readers:
         response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, text.text()));
@@ -176,7 +205,7 @@ pub fn tab_button(label: String, selected: &mut bool) -> impl egui::Widget + '_ 
             ui.painter().rect(
                 rect, //.expand(visuals.expansion)
                 rect.height() / 2.0,
-                if *selected {
+                if self.selected {
                     hex_color!("#000000")
                 } else {
                     hex_color!("#ECECEC")
@@ -192,7 +221,7 @@ pub fn tab_button(label: String, selected: &mut bool) -> impl egui::Widget + '_ 
             text.paint_with_color_override(
                 ui.painter(),
                 text_pos,
-                if *selected {
+                if self.selected {
                     hex_color!("#ffffff")
                 } else {
                     hex_color!("#363636")
