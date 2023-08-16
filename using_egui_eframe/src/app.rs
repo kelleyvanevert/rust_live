@@ -1,6 +1,9 @@
 use std::f32;
 
-use egui::{hex_color, vec2, Color32, FontFamily, FontId, Layout, Stroke, TextStyle, Vec2};
+use egui::{
+    hex_color, pos2, vec2, Align, Color32, FontFamily, FontId, Label, Layout, Rect, RichText,
+    Sense, Stroke, TextStyle, Vec2, WidgetText,
+};
 
 /// We derive Deserialize/Serialize so we can persist app state on shutdown.
 #[derive(serde::Deserialize, serde::Serialize)]
@@ -134,13 +137,18 @@ impl eframe::App for TemplateApp {
                     },
                 );
 
-                ui.heading(label);
-                ui.hyperlink("https://github.com/emilk/eframe_template");
-                ui.add(egui::github_link_file!(
-                    "https://github.com/emilk/eframe_template/blob/master/",
-                    "Source code."
-                ));
-                egui::warn_if_debug_build(ui);
+                ui.add(dash(256.0));
+
+                ui.add_space(20.0);
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.vertical(|ui| {
+                        let text = WidgetText::RichText(RichText::new("let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};")).monospace();
+
+                        ui.add(Label::new(text));
+                     });
+                    ui.add_space(20.0);
+                });
             });
 
         if false {
@@ -176,15 +184,48 @@ fn setup_custom_fonts(ctx: &egui::Context) {
         vec!["Plus Jakarta Bold".to_owned()],
     );
 
-    // // Put my font as last fallback for monospace:
-    // fonts
-    //     .families
-    //     .entry(egui::FontFamily::Monospace)
-    //     .or_default()
-    //     .push("Plus Jakarta".to_owned());
+    // Put my font as last fallback for monospace:
+    fonts
+        .families
+        .entry(egui::FontFamily::Monospace)
+        .or_default()
+        .insert(0, "Fira Code".to_owned());
 
     // Tell egui to use these fonts:
     ctx.set_fonts(fonts);
+}
+
+pub fn dash(height: f32) -> impl egui::Widget + 'static {
+    move |ui: &mut egui::Ui| {
+        let (rect, response) = ui.allocate_exact_size(vec2(f32::INFINITY, height), Sense::click());
+
+        let padding = vec2(20.0, 16.0);
+
+        if ui.is_rect_visible(rect) {
+            ui.painter().rect_filled(rect, 0.0, hex_color!("#0B07C7"));
+
+            let text = egui::WidgetText::from("Sample");
+
+            let text = text.into_galley(
+                ui,
+                Some(false),
+                ui.available_width() - 2. * padding.x,
+                FontId {
+                    size: 18.,
+                    family: egui::FontFamily::Proportional,
+                },
+            );
+
+            let text_pos = ui
+                .layout()
+                .align_size_within_rect(text.size(), rect.shrink2(padding))
+                .left_top();
+
+            text.paint_with_color_override(ui.painter(), text_pos, hex_color!("#ffffff"));
+        }
+
+        response
+    }
 }
 
 pub fn tab_button(label: String, selected: &mut bool) -> impl egui::Widget + '_ {
