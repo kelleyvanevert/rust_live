@@ -6,9 +6,18 @@
 fn main() -> eframe::Result<()> {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
 
-    let native_options = eframe::NativeOptions::default();
+    let native_options = eframe::NativeOptions {
+        fullsize_content: true,
+        drag_and_drop_support: true,
+        // follow_system_theme: true,
+        default_theme: eframe::Theme::Light,
+        min_window_size: Some(egui::vec2(400.0, 100.0)),
+        initial_window_size: Some(egui::vec2(900.0, 600.0)),
+        ..Default::default()
+    };
+
     eframe::run_native(
-        "eframe template",
+        "Rust livecode editor",
         native_options,
         Box::new(|cc| Box::new(using_egui_eframe::TemplateApp::new(cc))),
     )
