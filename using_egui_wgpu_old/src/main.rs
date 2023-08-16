@@ -2,14 +2,16 @@ use std::iter;
 use std::time::Instant;
 
 use ::egui::FontDefinitions;
+use app::App;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
+use winit::dpi::{LogicalSize, Size};
 use winit::event::Event::*;
 use winit::event_loop::ControlFlow;
-const INITIAL_WIDTH: u32 = 1920;
-const INITIAL_HEIGHT: u32 = 1080;
+use winit::platform::macos::WindowBuilderExtMacOS;
 
-/// A custom event type for the winit app.
+mod app;
+
 enum CustomEvent {
     RequestRedraw,
 }
@@ -18,14 +20,15 @@ enum CustomEvent {
 fn main() {
     let event_loop = winit::event_loop::EventLoopBuilder::<CustomEvent>::with_user_event().build();
     let window = winit::window::WindowBuilder::new()
-        .with_decorations(true)
+        .with_title("")
+        .with_fullsize_content_view(true)
+        .with_titlebar_transparent(true)
+        .with_active(true)
+        .with_inner_size(Size::Logical(LogicalSize {
+            width: 900.0,
+            height: 600.0,
+        }))
         .with_resizable(true)
-        .with_transparent(false)
-        .with_title("egui-wgpu_winit example")
-        .with_inner_size(winit::dpi::PhysicalSize {
-            width: INITIAL_WIDTH,
-            height: INITIAL_HEIGHT,
-        })
         .build(&event_loop)
         .unwrap();
 
@@ -96,7 +99,8 @@ fn main() {
     let mut egui_rpass = RenderPass::new(&device, surface_format, 1);
 
     // Display the demo application that ships with egui.
-    let mut demo_app = egui_demo_lib::DemoWindows::default();
+    // let mut demo_app = egui_demo_lib::DemoWindows::default();
+    let mut app = App::new(&platform.context());
 
     let start_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
@@ -128,7 +132,7 @@ fn main() {
                 platform.begin_frame();
 
                 // Draw the demo application.
-                demo_app.ui(&platform.context());
+                app.ui(&platform.context());
 
                 // End the UI frame. We could now handle the output and draw the UI with the backend.
                 let full_output = platform.end_frame(Some(&window));
