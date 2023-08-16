@@ -1,6 +1,6 @@
 use egui::{
-    epaint::Shadow, hex_color, vec2, Context, FontId, Label, Layout, Response, RichText, Sense,
-    Stroke, Ui, Vec2, Widget, WidgetText,
+    epaint::Shadow, hex_color, pos2, vec2, Context, FontFamily, FontId, Label, Layout, Rect,
+    Response, RichText, Sense, Stroke, Ui, Vec2, Widget, WidgetText,
 };
 
 pub struct App<'a> {
@@ -63,13 +63,13 @@ impl<'a> App<'a> {
                     },
                 );
 
-                ui.add(dash(256.0));
+                ui.add(SampleDash::new());
 
                 ui.add_space(20.0);
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
                     ui.vertical(|ui| {
-                        let text = WidgetText::RichText(RichText::new("let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};")).monospace();
+                        let text =  RichText::new("let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};").monospace().size(18.0).color(hex_color!("#222222"));
 
                         ui.add(Label::new(text));
                      });
@@ -83,11 +83,14 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     // Start with the default fonts (we will be adding to them rather than replacing them).
     let mut fonts = egui::FontDefinitions::default();
 
-    // Install my own font (maybe supporting non-latin characters).
-    // .ttf and .otf files supported.
     fonts.font_data.insert(
         "Plus Jakarta Bold".to_owned(),
         egui::FontData::from_static(include_bytes!("../assets/fonts/PlusJakartaSans-Bold.ttf")),
+    );
+
+    fonts.font_data.insert(
+        "Plus Jakarta Medium".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/PlusJakartaSans-Medium.ttf")),
     );
 
     fonts.font_data.insert(
@@ -98,6 +101,11 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     // Put my font first (highest priority) for proportional text:
     fonts.families.insert(
         egui::FontFamily::Proportional,
+        vec!["Plus Jakarta Medium".to_owned()],
+    );
+
+    fonts.families.insert(
+        egui::FontFamily::Name("Bold".into()),
         vec!["Plus Jakarta Bold".to_owned()],
     );
 
@@ -112,36 +120,57 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-pub fn dash(height: f32) -> impl egui::Widget + 'static {
-    move |ui: &mut egui::Ui| {
-        let (rect, response) = ui.allocate_exact_size(vec2(f32::INFINITY, height), Sense::click());
+pub struct SampleDash {}
 
-        let padding = vec2(20.0, 16.0);
+impl SampleDash {
+    const HEIGHT: f32 = 256.0;
 
-        if ui.is_rect_visible(rect) {
-            ui.painter().rect_filled(rect, 0.0, hex_color!("#0B07C7"));
+    pub fn new() -> Self {
+        Self {}
+    }
+}
 
-            let text = egui::WidgetText::from("Sample");
+impl Widget for SampleDash {
+    fn ui(self, ui: &mut Ui) -> Response {
+        let at = ui.cursor().left_top();
+        let rect = Rect::from_min_max(at, at + vec2(f32::INFINITY, SampleDash::HEIGHT));
 
-            let text = text.into_galley(
-                ui,
-                Some(false),
-                ui.available_width() - 2. * padding.x,
-                FontId {
-                    size: 18.,
-                    family: egui::FontFamily::Proportional,
-                },
-            );
+        ui.allocate_ui(vec2(f32::INFINITY, SampleDash::HEIGHT), |ui| {
+            ui.set_min_height(SampleDash::HEIGHT);
 
-            let text_pos = ui
-                .layout()
-                .align_size_within_rect(text.size(), rect.shrink2(padding))
-                .left_top();
+            if ui.is_rect_visible(rect) {
+                ui.painter().rect_filled(rect, 0.0, hex_color!("#0B07C7"));
 
-            text.paint_with_color_override(ui.painter(), text_pos, hex_color!("#ffffff"));
-        }
+                ui.add_space(20.0);
 
-        response
+                ui.horizontal(|ui| {
+                    ui.add_space(20.0);
+                    ui.label(
+                        RichText::new("Sample")
+                            .family(FontFamily::Name("Bold".into()))
+                            .color(hex_color!("#ffffff"))
+                            .size(18.0),
+                    );
+
+                    ui.add_space(20.0);
+                    ui.label(
+                        RichText::new("Length: 2.3s")
+                            .color(hex_color!("#ffffff66"))
+                            .size(12.0),
+                    );
+
+                    ui.add_space(20.0);
+                    ui.label(
+                        RichText::new("Stereo")
+                            .color(hex_color!("#ffffff66"))
+                            .size(12.0),
+                    );
+                });
+
+                ui.add_space(12.0);
+            }
+        })
+        .response
     }
 }
 
@@ -179,7 +208,7 @@ impl Widget for TabButton {
             ui.available_width() - 2. * padding.x,
             FontId {
                 size: 14.,
-                family: egui::FontFamily::Proportional,
+                family: FontFamily::Name("Bold".into()),
             },
         );
 
