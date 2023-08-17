@@ -15,7 +15,10 @@ use egui::{
 };
 use winit::{
     dpi::PhysicalSize,
-    event::{Event, ModifiersState, TouchPhase, VirtualKeyCode, VirtualKeyCode::*, WindowEvent::*},
+    event::{
+        ElementState, Event, ModifiersState, TouchPhase, VirtualKeyCode, VirtualKeyCode::*,
+        WindowEvent::*,
+    },
     window::CursorIcon,
 };
 
@@ -32,6 +35,8 @@ pub struct PlatformDescriptor {
     pub font_definitions: egui::FontDefinitions,
     /// Egui style configuration.
     pub style: egui::Style,
+
+    pub window_drag_surface_height: Option<usize>,
 }
 
 #[cfg(feature = "webbrowser")]
@@ -75,6 +80,8 @@ pub struct Platform {
     // device IDs are opaque, so we have to create our own ID mapping.
     device_indices: HashMap<winit::event::DeviceId, u64>,
     next_device_index: u64,
+
+    window_drag_surface_height: Option<usize>,
 }
 
 impl Platform {
@@ -107,11 +114,12 @@ impl Platform {
             touch_pointer_pressed: 0,
             device_indices: HashMap::new(),
             next_device_index: 1,
+            window_drag_surface_height: descriptor.window_drag_surface_height,
         }
     }
 
     /// Handles the given winit event and updates the egui context. Should be called before starting a new frame with `start_frame()`.
-    pub fn handle_event<T>(&mut self, winit_event: &Event<T>) {
+    pub fn handle_event<T>(&mut self, window: &winit::window::Window, winit_event: &Event<T>) {
         match winit_event {
             Event::WindowEvent {
                 window_id: _window_id,
@@ -149,6 +157,10 @@ impl Platform {
                     } else {
                         // push event only if the cursor is inside the window
                         if let Some(pointer_pos) = self.pointer_pos {
+                            if state == &ElementState::Pressed && let Some(height) = self.window_drag_surface_height && pointer_pos.y <= height as f32 {
+                                let _ = window.drag_window();
+                            }
+
                             self.raw_input.events.push(egui::Event::PointerButton {
                                 pos: pointer_pos,
                                 button: match button {

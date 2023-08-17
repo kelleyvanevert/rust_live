@@ -16,6 +16,8 @@ pub struct App<'a> {
 }
 
 impl<'a> App<'a> {
+    pub const WINDOW_DRAG_SURFACE_HEIGHT: usize = 54;
+
     pub fn new(ctx: &Context) -> Self {
         setup_custom_fonts(ctx);
 
@@ -33,7 +35,7 @@ impl<'a> App<'a> {
         }
     }
 
-    pub fn ui(&mut self, ctx: &Context) {
+    pub fn ui(&mut self, ctx: &Context) -> Response {
         let my_frame = egui::containers::Frame {
             inner_margin: 0.0.into(),
             outer_margin: 0.0.into(),
@@ -89,7 +91,7 @@ impl<'a> App<'a> {
                      });
                     ui.add_space(20.0);
                 });
-            });
+            }).response
     }
 }
 

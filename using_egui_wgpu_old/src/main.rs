@@ -1,3 +1,5 @@
+#![feature(let_chains)]
+
 use std::iter;
 use std::time::Instant;
 
@@ -96,6 +98,7 @@ fn main() {
         scale_factor: window.scale_factor(),
         font_definitions: FontDefinitions::default(),
         style: Default::default(),
+        window_drag_surface_height: Some(App::WINDOW_DRAG_SURFACE_HEIGHT),
     });
 
     // We use the egui_wgpu_backend crate as the render backend.
@@ -107,7 +110,7 @@ fn main() {
     let start_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         // Pass the winit events to the platform integration.
-        platform.handle_event(&event);
+        platform.handle_event(&window, &event);
 
         match event {
             RedrawRequested(..) => {
@@ -134,7 +137,7 @@ fn main() {
                 platform.begin_frame();
 
                 // Draw the demo application.
-                app.ui(&platform.context());
+                let _response = app.ui(&platform.context());
 
                 // End the UI frame. We could now handle the output and draw the UI with the backend.
                 let full_output = platform.end_frame(Some(&window));
@@ -166,6 +169,7 @@ fn main() {
                         Some(wgpu::Color::BLACK),
                     )
                     .unwrap();
+
                 // Submit the commands.
                 queue.submit(iter::once(encoder.finish()));
 
