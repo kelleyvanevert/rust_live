@@ -1,0 +1,19 @@
+[package]
+name = "using_epaint_wgpu"
+version = "0.1.0"
+authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
+edition = "2021"
+
+[dependencies]
+chrono = "0.4.26"
+pollster = "0.2"
+epaint = { version = "0.22.0", features = ["color-hex", "bytemuck"] }
+wgpu = "0.17"
+winit = { version = "0.28.6", features = ["x11"] }
+color-hex = "0.2.0"
+bytemuck = "1.13.1"
+symphonia = { version = "0.5.3", features = ["all"] }
+env_logger = "0.10.0"
+itertools = "0.11.0"
+emath = "0.22.0"
+enum-map = "2.6.1"
