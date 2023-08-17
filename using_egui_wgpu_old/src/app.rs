@@ -1,8 +1,9 @@
 use std::{cell::RefCell, time::Instant};
 
 use egui::{
-    epaint::Shadow, hex_color, pos2, vec2, Color32, Context, FontFamily, FontId, Frame, Label,
-    Layout, Pos2, Rect, Response, RichText, Sense, Shape, Stroke, Ui, Vec2, Widget, WidgetText,
+    epaint::{CircleShape, CubicBezierShape, Shadow},
+    hex_color, pos2, vec2, Color32, Context, FontFamily, FontId, Label, Layout, Pos2, Rect,
+    Response, RichText, Shape, Stroke, Ui, Vec2, Widget, WidgetText,
 };
 
 use crate::read_audio_file::{read_audio_file, AudioTrackInfo};
@@ -11,6 +12,7 @@ pub struct App<'a> {
     editors: Vec<&'a str>,
     current_editor: usize,
     sample_dash: SampleDash,
+    easing_dash: EasingDash,
 }
 
 impl<'a> App<'a> {
@@ -23,10 +25,11 @@ impl<'a> App<'a> {
                 "Untitled-1".into(),
                 "Untitled-2".into(),
             ],
-            current_editor: 0,
+            current_editor: 1,
             sample_dash: SampleDash::new(
                 "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
             ),
+            easing_dash: EasingDash::new(),
         }
     }
 
@@ -73,7 +76,7 @@ impl<'a> App<'a> {
 
                 match self.current_editor {
                     0 => self.sample_dash.ui(ui),
-                    _ => ui.add(EasingDash::new()),
+                    _ => self.easing_dash.ui(ui),
                 };
 
                 ui.add_space(20.0);
@@ -139,18 +142,18 @@ impl EasingDash {
     pub fn new() -> Self {
         Self {}
     }
-}
 
-impl Widget for EasingDash {
-    fn ui(self, ui: &mut Ui) -> Response {
+    fn ui(&mut self, ui: &mut Ui) {
         let at = ui.cursor().left_top();
         let rect = Rect::from_min_max(at, at + vec2(f32::INFINITY, DASH_HEIGHT));
+
+        let bg = hex_color!("#F8B711");
 
         ui.allocate_ui(vec2(f32::INFINITY, DASH_HEIGHT), |ui| {
             ui.set_min_height(DASH_HEIGHT);
 
             if ui.is_rect_visible(rect) {
-                ui.painter().rect_filled(rect, 0.0, hex_color!("#F8B711"));
+                ui.painter().rect_filled(rect, 0.0, bg);
 
                 ui.add_space(20.0);
 
@@ -170,10 +173,104 @@ impl Widget for EasingDash {
                     );
                 });
 
-                ui.add_space(12.0);
+                ui.ctx().request_repaint();
+
+                let paint_left_top = rect.left_top() + vec2(60.0, 50.0);
+
+                let paint_rect = Rect::from_min_max(
+                    paint_left_top,
+                    paint_left_top
+                        + vec2(
+                            ui.clip_rect().width() - 60.0 - 20.0,
+                            DASH_HEIGHT - 50.0 - 30.0,
+                        ),
+                );
+
+                let mut bezier_rect = paint_rect.clone();
+                bezier_rect.min += vec2(170.0, 20.0);
+                bezier_rect.max -= vec2(120.0, 20.0);
+                let w = bezier_rect.width();
+                let h = bezier_rect.height();
+                let Pos2 { x: xmin, y: ymin } = bezier_rect.left_top();
+                let Pos2 { x: xmax, y: ymax } = bezier_rect.right_bottom();
+
+                let mut shapes = vec![];
+
+                let a = pos2(xmin, ymax);
+                let b = pos2(xmax, ymin);
+                let c1 = pos2(xmin + 0.3 * w, ymax);
+                let c2 = pos2(xmax - 0.2 * w, ymin + 0.7 * h);
+
+                shapes.push(Shape::CubicBezier(CubicBezierShape::from_points_stroke(
+                    [a, c1, c2, b],
+                    false,
+                    Color32::TRANSPARENT,
+                    Stroke::new(4.0, hex_color!("#000000")),
+                )));
+
+                shapes.extend(Shape::dashed_line(
+                    &[a, c1],
+                    Stroke::new(4.0, hex_color!("#000000")),
+                    4.0,
+                    4.0,
+                ));
+
+                shapes.extend(Shape::dashed_line(
+                    &[b, c2],
+                    Stroke::new(4.0, hex_color!("#000000")),
+                    4.0,
+                    4.0,
+                ));
+
+                shapes.push(Shape::Circle(CircleShape {
+                    center: a,
+                    radius: 9.0,
+                    stroke: Stroke::new(4.0, hex_color!("#000000")),
+                    fill: bg,
+                }));
+
+                shapes.push(Shape::Circle(CircleShape {
+                    center: b,
+                    radius: 9.0,
+                    stroke: Stroke::new(4.0, hex_color!("#000000")),
+                    fill: bg,
+                }));
+
+                shapes.push(Shape::Circle(CircleShape {
+                    center: c1,
+                    radius: 8.0,
+                    stroke: Stroke::new(4.0, hex_color!("#000000")),
+                    fill: bg,
+                }));
+
+                shapes.push(Shape::Circle(CircleShape {
+                    center: c2,
+                    radius: 8.0,
+                    stroke: Stroke::new(4.0, hex_color!("#000000")),
+                    fill: bg,
+                }));
+
+                ui.painter().extend(shapes);
+
+                let buttons_left_top = rect.left_top() + vec2(60.0, 70.0);
+                ui.allocate_ui_at_rect(
+                    Rect {
+                        min: buttons_left_top,
+                        max: buttons_left_top + vec2(60.0, 200.0),
+                    },
+                    |ui| {
+                        ui.vertical(|ui| {
+                            ui.spacing_mut().item_spacing = vec2(0.0, 8.0);
+
+                            ui.add(MiniButton::new("linear", false));
+                            ui.add(MiniButton::new("quad", false));
+                            ui.add(MiniButton::new("bezier", true));
+                            ui.add(MiniButton::new("smooth", false));
+                        });
+                    },
+                );
             }
-        })
-        .response
+        });
     }
 }
 
@@ -200,7 +297,7 @@ impl SampleDash {
         }
     }
 
-    fn ui(&mut self, ui: &mut Ui) -> Response {
+    fn ui(&mut self, ui: &mut Ui) {
         let at = ui.cursor().left_top();
         let rect = Rect::from_min_max(at, at + vec2(f32::INFINITY, DASH_HEIGHT));
 
@@ -380,8 +477,7 @@ impl SampleDash {
 
                 ui.painter().extend(shapes);
             }
-        })
-        .response
+        });
     }
 }
 
@@ -465,6 +561,94 @@ impl Widget for TabButton {
                     hex_color!("#ffffff")
                 } else {
                     hex_color!("#363636")
+                },
+            );
+        }
+
+        response
+    }
+}
+
+pub struct MiniButton {
+    text: WidgetText,
+    selected: bool,
+}
+
+impl MiniButton {
+    pub fn new(text: impl Into<WidgetText>, selected: bool) -> Self {
+        Self {
+            text: text.into(),
+            selected,
+        }
+    }
+}
+
+impl Widget for MiniButton {
+    fn ui(self, ui: &mut Ui) -> Response {
+        // Widget code can be broken up in four steps:
+        //  1. Decide a size for the widget
+        //  2. Allocate space for it
+        //  3. Handle interactions with the widget (if any)
+        //  4. Paint the widget
+
+        let padding = vec2(10.0, 4.0);
+
+        // 1. Deciding widget size:
+        // You can query the `ui` how much space is available,
+        // but in this example we have a fixed size widget based on the height of a standard button:
+
+        let text = self.text.into_galley(
+            ui,
+            Some(false),
+            ui.available_width() - 2. * padding.x,
+            FontId {
+                size: 14.,
+                family: FontFamily::Name("Bold".into()),
+            },
+        );
+
+        let desired_size = vec2(text.size().x + 2.0 * padding.x, 20.);
+
+        // 2. Allocating space:
+        // This is where we get a region of the screen assigned.
+        // We also tell the Ui to sense clicks in the allocated region.
+        let (rect, response) = ui.allocate_at_least(desired_size, egui::Sense::click());
+
+        // // 3. Interact: Time to check for clicks!
+        // if response.clicked() {
+        //     *selected = !*selected;
+        //     response.mark_changed(); // report back that the value changed
+        // }
+
+        // Attach some meta-data to the response which can be used by screen readers:
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, text.text()));
+
+        if ui.is_rect_visible(rect) {
+            // let visuals = ui.style().interact(&response);
+
+            ui.painter().rect(
+                rect, //.expand(visuals.expansion)
+                4.0,
+                if self.selected {
+                    hex_color!("#00000066")
+                } else {
+                    hex_color!("#00000022")
+                },
+                Stroke::NONE,
+            );
+
+            let text_pos = ui
+                .layout()
+                .align_size_within_rect(text.size(), rect.shrink2(padding))
+                .min;
+
+            text.paint_with_color_override(
+                ui.painter(),
+                text_pos,
+                if self.selected {
+                    hex_color!("#000000")
+                } else {
+                    hex_color!("#333333")
                 },
             );
         }
