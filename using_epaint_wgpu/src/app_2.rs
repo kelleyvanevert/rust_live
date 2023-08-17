@@ -3,23 +3,25 @@ use epaint::text::{FontData, FontDefinitions};
 use epaint::textures::TextureOptions;
 use epaint::{
     hex_color, pos2, tessellate_shapes, ClippedShape, Color32, FontFamily, FontId, FontImage,
-    Fonts, Primitive, Rect, Rgba, Shape, Stroke, TessellationOptions, TextureManager,
+    Fonts, Primitive, Rect, Rgba, Shape, Stroke, TessellationOptions, TextShape, TextureManager,
 };
 
 use crate::kgui::context::KguiContext;
 
 pub fn draw(ctx: &KguiContext) {
-    // let s = Shape::text(
-    //     &self.fonts,
-    //     pos2(300.0, 300.0),
-    //     Align2::LEFT_TOP,
-    //     "JS",
-    //     FontId {
-    //         size: 30.0,
-    //         family: epaint::FontFamily::Monospace,
-    //     },
-    //     Color32::BLACK,
-    // );
+    let text_shape = ctx.fonts(|fonts| {
+        return Shape::text(
+            fonts,
+            pos2(300.0, 300.0),
+            Align2::LEFT_TOP,
+            "JS",
+            FontId {
+                size: 30.0,
+                family: epaint::FontFamily::Monospace,
+            },
+            Color32::WHITE,
+        );
+    });
 
     let shape = Shape::Vec(vec![
         Shape::rect_filled(
@@ -31,7 +33,7 @@ pub fn draw(ctx: &KguiContext) {
             hex_color!("#E8D44D"),
         ),
         Shape::circle_stroke(pos2(200.0, 200.0), 50.0, Stroke::new(6.0, Color32::BLACK)),
-        // s,
+        text_shape,
     ]);
 
     ctx.graphics_mut(|graphics| {

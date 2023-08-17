@@ -209,6 +209,21 @@ impl KguiContext {
         }
     }
 
+    /// Read-only access to [`Fonts`].
+    ///
+    /// Not valid until first call to [`Context::run()`].
+    /// That's because since we don't know the proper `pixels_per_point` until then.
+    #[inline]
+    pub fn fonts<R>(&self, reader: impl FnOnce(&Fonts) -> R) -> R {
+        self.read(move |ctx| {
+            reader(
+                ctx.fonts
+                    .as_ref()
+                    .expect("No fonts available until first call to Context::run()"),
+            )
+        })
+    }
+
     /// Read-only access to [`Memory`].
     #[inline]
     pub fn memory<R>(&self, reader: impl FnOnce(&Memory) -> R) -> R {
