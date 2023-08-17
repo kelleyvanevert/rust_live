@@ -6,7 +6,10 @@ use egui::{
     Response, RichText, Sense, Shape, Stroke, Ui, Vec2, Widget, WidgetText,
 };
 
-use crate::read_audio_file::{read_audio_file, AudioTrackInfo};
+use crate::{
+    read_audio_file::{read_audio_file, AudioTrackInfo},
+    syntax_highlighting::code_view_ui,
+};
 
 pub struct App<'a> {
     editors: Vec<&'a str>,
@@ -106,9 +109,10 @@ impl<'a> App<'a> {
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
                     ui.vertical(|ui| {
-                        let text =  RichText::new("let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};").monospace().size(18.0).color(hex_color!("#222222"));
+                        code_view_ui(ui, "let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};");
+                        // let text =  RichText::new("let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};").monospace().size(18.0).color(hex_color!("#222222"));
 
-                        ui.add(Label::new(text));
+                        // ui.add(Label::new(text));
                      });
                     ui.add_space(20.0);
                 });
@@ -135,6 +139,11 @@ fn setup_custom_fonts(ctx: &egui::Context) {
         egui::FontData::from_static(include_bytes!("../assets/fonts/FiraCode-Retina.ttf")),
     );
 
+    fonts.font_data.insert(
+        "Fira Code SemiBold".to_owned(),
+        egui::FontData::from_static(include_bytes!("../assets/fonts/FiraCode-SemiBold.ttf")),
+    );
+
     // Put my font first (highest priority) for proportional text:
     fonts.families.insert(
         egui::FontFamily::Proportional,
@@ -144,6 +153,11 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     fonts.families.insert(
         egui::FontFamily::Name("Bold".into()),
         vec!["Plus Jakarta Bold".to_owned()],
+    );
+
+    fonts.families.insert(
+        egui::FontFamily::Name("Code Bold".into()),
+        vec!["Fira Code SemiBold".to_owned()],
     );
 
     // Put my font as last fallback for monospace:

@@ -16,6 +16,7 @@ mod app;
 mod egui_wgpu_backend;
 mod egui_winit_platform;
 mod read_audio_file;
+mod syntax_highlighting;
 
 enum CustomEvent {}
 
