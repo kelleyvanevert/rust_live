@@ -156,10 +156,7 @@ impl<'a> App<'a> {
                 ui.horizontal(|ui| {
                     ui.add_space(20.0);
                     ui.vertical(|ui| {
-                        code_view_ui(ui, "let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};");
-                        // let text =  RichText::new("let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};").monospace().size(18.0).color(hex_color!("#222222"));
-
-                        // ui.add(Label::new(text));
+                        code_view_ui(ui, "let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};\n\nlet bpm = 120;\nlet beat = 60/bpm;\n\nlet hat = sample[\"/Users/kelley/emp/2022-11 Blabl Project/Samples/Processed/Freeze/Freeze RES [2022-11-23 221454].wav\"];\n\nlet house = kick * every(beat) + hat * (every(.5*beat) + .5*beat);\n\nplay house;");
                      });
                     ui.add_space(20.0);
                 });
