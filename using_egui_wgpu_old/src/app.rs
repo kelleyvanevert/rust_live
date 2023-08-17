@@ -1,11 +1,16 @@
+use std::{cell::RefCell, time::Instant};
+
 use egui::{
-    epaint::Shadow, hex_color, pos2, vec2, Context, FontFamily, FontId, Label, Layout, Rect,
-    Response, RichText, Sense, Stroke, Ui, Vec2, Widget, WidgetText,
+    epaint::Shadow, hex_color, pos2, vec2, Color32, Context, FontFamily, FontId, Frame, Label,
+    Layout, Pos2, Rect, Response, RichText, Sense, Shape, Stroke, Ui, Vec2, Widget, WidgetText,
 };
+
+use crate::read_audio_file::{read_audio_file, AudioTrackInfo};
 
 pub struct App<'a> {
     editors: Vec<&'a str>,
     current_editor: usize,
+    sample_dash: SampleDash,
 }
 
 impl<'a> App<'a> {
@@ -19,6 +24,9 @@ impl<'a> App<'a> {
                 "Untitled-2".into(),
             ],
             current_editor: 0,
+            sample_dash: SampleDash::new(
+                "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
+            ),
         }
     }
 
@@ -63,7 +71,10 @@ impl<'a> App<'a> {
                     },
                 );
 
-                ui.add(SampleDash::new());
+                match self.current_editor {
+                    0 => self.sample_dash.ui(ui),
+                    _ => ui.add(EasingDash::new()),
+                };
 
                 ui.add_space(20.0);
                 ui.horizontal(|ui| {
@@ -120,23 +131,81 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-pub struct SampleDash {}
+const DASH_HEIGHT: f32 = 256.0;
 
-impl SampleDash {
-    const HEIGHT: f32 = 256.0;
+pub struct EasingDash {}
 
+impl EasingDash {
     pub fn new() -> Self {
         Self {}
     }
 }
 
-impl Widget for SampleDash {
+impl Widget for EasingDash {
     fn ui(self, ui: &mut Ui) -> Response {
         let at = ui.cursor().left_top();
-        let rect = Rect::from_min_max(at, at + vec2(f32::INFINITY, SampleDash::HEIGHT));
+        let rect = Rect::from_min_max(at, at + vec2(f32::INFINITY, DASH_HEIGHT));
 
-        ui.allocate_ui(vec2(f32::INFINITY, SampleDash::HEIGHT), |ui| {
-            ui.set_min_height(SampleDash::HEIGHT);
+        ui.allocate_ui(vec2(f32::INFINITY, DASH_HEIGHT), |ui| {
+            ui.set_min_height(DASH_HEIGHT);
+
+            if ui.is_rect_visible(rect) {
+                ui.painter().rect_filled(rect, 0.0, hex_color!("#F8B711"));
+
+                ui.add_space(20.0);
+
+                ui.horizontal(|ui| {
+                    let mut prev_pane = rect.clone();
+                    prev_pane.set_width(40.0);
+                    ui.painter()
+                        .rect_filled(prev_pane, 0.0, hex_color!("#C7077A"));
+                    ui.add_space(40.0);
+
+                    ui.add_space(20.0);
+                    ui.label(
+                        RichText::new("Easing")
+                            .family(FontFamily::Name("Bold".into()))
+                            .color(hex_color!("#000000"))
+                            .size(18.0),
+                    );
+                });
+
+                ui.add_space(12.0);
+            }
+        })
+        .response
+    }
+}
+
+pub struct SampleDash {
+    audio_file: AudioTrackInfo,
+    width: usize,
+    summary: RefCell<Option<Summary>>,
+}
+
+struct Summary {
+    overall_max: f32,
+    samples_overview: Vec<(f32, f32, f32)>,
+}
+
+impl SampleDash {
+    pub fn new(filepath: &str) -> Self {
+        let width = 0;
+        let audio_file = read_audio_file(filepath);
+
+        Self {
+            audio_file,
+            width,
+            summary: RefCell::new(None),
+        }
+    }
+
+    fn ui(&mut self, ui: &mut Ui) -> Response {
+        let at = ui.cursor().left_top();
+        let rect = Rect::from_min_max(at, at + vec2(f32::INFINITY, DASH_HEIGHT));
+
+        ui.allocate_ui(vec2(f32::INFINITY, DASH_HEIGHT), |ui| {
+            ui.set_min_height(DASH_HEIGHT);
 
             if ui.is_rect_visible(rect) {
                 ui.painter().rect_filled(rect, 0.0, hex_color!("#0B07C7"));
@@ -144,6 +213,12 @@ impl Widget for SampleDash {
                 ui.add_space(20.0);
 
                 ui.horizontal(|ui| {
+                    let mut prev_pane = rect.clone();
+                    prev_pane.set_width(40.0);
+                    ui.painter()
+                        .rect_filled(prev_pane, 0.0, hex_color!("#C7077A"));
+                    ui.add_space(40.0);
+
                     ui.add_space(20.0);
                     ui.label(
                         RichText::new("Sample")
@@ -167,7 +242,143 @@ impl Widget for SampleDash {
                     );
                 });
 
-                ui.add_space(12.0);
+                ui.ctx().request_repaint();
+
+                let paint_left_top = rect.left_top() + vec2(60.0, 50.0);
+
+                let paint_rect = Rect::from_min_max(
+                    paint_left_top,
+                    paint_left_top
+                        + vec2(
+                            ui.clip_rect().width() - 60.0 - 20.0,
+                            DASH_HEIGHT - 50.0 - 30.0,
+                        ),
+                );
+
+                let width = paint_rect.width() as usize / 2;
+                if width != self.width {
+                    self.width = width;
+
+                    println!("update");
+                    let t0 = Instant::now();
+
+                    let num_samples = self.audio_file.samples.len();
+                    // physical pixels, btw
+                    let samples_per_pixel = num_samples / width;
+
+                    // (min, max, rms)
+                    let mut samples_overview: Vec<(f32, f32, f32)> = vec![];
+
+                    let (mut overall_min, mut overall_max) = (0.0, 0.0);
+                    let (mut min, mut max) = (0.0, 0.0);
+
+                    let mut count = 0;
+                    let mut rms_range = vec![];
+
+                    fn calculate_rms(samples: &Vec<f32>) -> f32 {
+                        let sqr_sum = samples.iter().fold(0.0, |sqr_sum, s| {
+                            let sample = *s as f32;
+                            sqr_sum + sample * sample
+                        });
+
+                        (sqr_sum / samples.len() as f32).sqrt()
+                    }
+
+                    for i in 0..num_samples {
+                        let sample = self.audio_file.samples[i];
+                        rms_range.push(sample);
+
+                        if sample < min {
+                            min = sample;
+                        }
+                        if sample > max {
+                            max = sample;
+                        }
+                        if sample < overall_min {
+                            overall_min = sample;
+                        }
+                        if sample > overall_max {
+                            overall_max = sample;
+                        }
+
+                        count += 1;
+                        if count == samples_per_pixel {
+                            let rms = calculate_rms(&rms_range);
+                            // println!("[min ={} max= {}, rms = {}]", min, max, rms);
+                            samples_overview.push((min, max, rms));
+                            count = 0;
+                            min = 0.0;
+                            max = 0.0;
+                            rms_range = vec![];
+                        }
+                    }
+
+                    println!("Processed samples, took: {:?}", Instant::elapsed(&t0));
+
+                    let _ = self.summary.borrow_mut().insert(Summary {
+                        overall_max: overall_max.max(-overall_min),
+                        samples_overview,
+                    });
+                }
+
+                let mut shapes = vec![];
+
+                // shapes.push(egui::epaint::Shape::Rect(egui::epaint::RectShape {
+                //     rect: paint_rect,
+                //     rounding: 0.0.into(),
+                //     fill: hex_color!("#00000055"),
+                //     stroke: Stroke::NONE,
+                // }));
+
+                let summary = self.summary.borrow();
+                let summary = summary.as_ref().unwrap();
+
+                let height = paint_rect.height();
+                let half = height / 2.0;
+                let scale = 0.85 * half * (1.0 / summary.overall_max);
+                let y0 = paint_rect.min.y + half;
+
+                for (i, &(min, max, rms)) in summary.samples_overview.iter().enumerate() {
+                    let x = 2.0 * i as f32 + 60.0;
+                    shapes.push(Shape::line_segment(
+                        [pos2(x, y0 + min * scale), pos2(x, y0 + max * scale)],
+                        Stroke::new(1.2, hex_color!("#ffffff77")),
+                    ));
+                    shapes.push(Shape::line_segment(
+                        [pos2(x, y0 - rms * scale), pos2(x, y0 + rms * scale)],
+                        Stroke::new(2.0, hex_color!("#ffffffff")),
+                    ));
+                }
+
+                // let time = ui.input(|i| i.time);
+
+                // let to_screen = emath::RectTransform::from_to(
+                //     Rect::from_x_y_ranges(0.0..=1.0, -1.0..=1.0),
+                //     paint_rect,
+                // );
+
+                // for &mode in &[2, 3, 5] {
+                //     let mode = mode as f64;
+                //     let n = 120;
+                //     let speed = 1.5;
+
+                //     let points: Vec<Pos2> = (0..=n)
+                //         .map(|i| {
+                //             let t = i as f64 / (n as f64);
+                //             let amp = (time * speed * mode).sin() / mode;
+                //             let y = amp * (t * std::f64::consts::TAU / 2.0 * mode).sin();
+                //             to_screen * pos2(t as f32, y as f32)
+                //         })
+                //         .collect();
+
+                //     let thickness = 10.0 / mode as f32;
+                //     shapes.push(egui::epaint::Shape::line(
+                //         points,
+                //         Stroke::new(thickness, hex_color!("#ffffff")),
+                //     ));
+                // }
+
+                ui.painter().extend(shapes);
             }
         })
         .response

@@ -13,11 +13,14 @@ use winit::platform::macos::WindowBuilderExtMacOS;
 mod app;
 mod egui_wgpu_backend;
 mod egui_winit_platform;
+mod read_audio_file;
 
 enum CustomEvent {}
 
 /// A simple egui + wgpu + winit based example.
 fn main() {
+    env_logger::init();
+
     let event_loop = winit::event_loop::EventLoopBuilder::<CustomEvent>::with_user_event().build();
     let window = winit::window::WindowBuilder::new()
         .with_title("")
