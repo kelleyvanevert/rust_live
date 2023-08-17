@@ -11,10 +11,10 @@ use winit::event_loop::ControlFlow;
 use winit::platform::macos::WindowBuilderExtMacOS;
 
 mod app;
+mod egui_wgpu_backend;
+mod egui_winit_platform;
 
-enum CustomEvent {
-    RequestRedraw,
-}
+enum CustomEvent {}
 
 /// A simple egui + wgpu + winit based example.
 fn main() {
@@ -99,7 +99,6 @@ fn main() {
     let mut egui_rpass = RenderPass::new(&device, surface_format, 1);
 
     // Display the demo application that ships with egui.
-    // let mut demo_app = egui_demo_lib::DemoWindows::default();
     let mut app = App::new(&platform.context());
 
     let start_time = Instant::now();
@@ -181,7 +180,7 @@ fn main() {
                 //     *control_flow = ControlFlow::Wait;
                 // }
             }
-            MainEventsCleared | UserEvent(CustomEvent::RequestRedraw) => {
+            MainEventsCleared => {
                 window.request_redraw();
             }
             WindowEvent { event, .. } => match event {

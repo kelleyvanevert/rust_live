@@ -5,12 +5,10 @@ authors = ["Nils Hasenbanck <nils@hasenbanck.de>"]
 edition = "2021"
 
 [dependencies]
-egui_wgpu_backend = "0.25"
 chrono = "0.4.26"
 pollster = "0.2"
-egui = { version = "0.22", features = ["color-hex"] }
-egui_winit_platform = "0.19"
+egui = { version = "0.22", features = ["color-hex", "bytemuck"] }
 wgpu = "0.17"
 winit = { version = "0.28.6", features = ["x11"] }
-egui_demo_lib = "0.22"
 color-hex = "0.2.0"
+bytemuck = "1.13.1"
