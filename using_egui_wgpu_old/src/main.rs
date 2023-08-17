@@ -1,8 +1,8 @@
 use std::iter;
 use std::time::Instant;
 
-use ::egui::FontDefinitions;
 use app::App;
+use egui::FontDefinitions;
 use egui_wgpu_backend::{RenderPass, ScreenDescriptor};
 use egui_winit_platform::{Platform, PlatformDescriptor};
 use winit::dpi::{LogicalSize, Size};
