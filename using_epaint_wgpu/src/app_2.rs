@@ -3,12 +3,15 @@ use epaint::text::{FontData, FontDefinitions};
 use epaint::textures::TextureOptions;
 use epaint::{
     hex_color, pos2, tessellate_shapes, ClippedShape, Color32, FontFamily, FontId, FontImage,
-    Fonts, Primitive, Rect, Rgba, Shape, Stroke, TessellationOptions, TextShape, TextureManager,
+    Fonts, Primitive, Rect, RectShape, Rgba, Shape, Stroke, TessellationOptions, TextShape,
+    TextureManager,
 };
 
 use crate::kgui::context::KguiContext;
 
 pub fn draw(ctx: &KguiContext) {
+    let background: Shape = RectShape::filled(ctx.screen_rect(), 0.0, hex_color!("#ffffff")).into();
+
     let text_shape = ctx.fonts(|fonts| {
         return Shape::text(
             fonts,
@@ -24,6 +27,7 @@ pub fn draw(ctx: &KguiContext) {
     });
 
     let shape = Shape::Vec(vec![
+        background,
         Shape::rect_filled(
             Rect {
                 min: pos2(200.0, 200.0),

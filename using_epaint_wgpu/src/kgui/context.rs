@@ -178,6 +178,31 @@ impl Default for WrappedTextureManager {
 pub struct KguiContext(Arc<RwLock<KguiContextImpl>>);
 
 impl KguiContext {
+    /// Read-only access to [`InputState`].
+    ///
+    /// Note that this locks the [`Context`].
+    ///
+    /// ```
+    /// # let mut ctx = egui::Context::default();
+    /// ctx.input(|i| {
+    ///     // ⚠️ Using `ctx` (even from other `Arc` reference) again here will lead to a dead-lock!
+    /// });
+    ///
+    /// if let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) {
+    ///     // This is fine!
+    /// }
+    /// ```
+    #[inline]
+    pub fn input<R>(&self, reader: impl FnOnce(&InputState) -> R) -> R {
+        self.read(move |ctx| reader(&ctx.input))
+    }
+
+    /// Read-write access to [`InputState`].
+    #[inline]
+    pub fn input_mut<R>(&self, writer: impl FnOnce(&mut InputState) -> R) -> R {
+        self.write(move |ctx| writer(&mut ctx.input))
+    }
+
     // Do read-only (shared access) transaction on Context
     fn read<R>(&self, reader: impl FnOnce(&KguiContextImpl) -> R) -> R {
         reader(&self.0.read())
@@ -252,6 +277,11 @@ impl KguiContext {
     #[inline]
     pub fn options_mut<R>(&self, writer: impl FnOnce(&mut Options) -> R) -> R {
         self.write(move |ctx| writer(&mut ctx.memory.options))
+    }
+
+    /// Position and size of the egui area.
+    pub fn screen_rect(&self) -> Rect {
+        self.input(|i| i.screen_rect())
     }
 
     // /// Read-only access to [`IdTypeMap`], which stores superficial widget state.

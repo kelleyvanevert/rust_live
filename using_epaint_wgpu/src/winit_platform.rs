@@ -133,23 +133,23 @@ impl Platform {
                     height: 0,
                 }) => {}
                 Resized(physical_size) => {
-                    // self.raw_input.screen_rect = Some(Rect::from_min_size(
-                    //     Default::default(),
-                    //     vec2(physical_size.width as f32, physical_size.height as f32)
-                    //         / self.scale_factor as f32,
-                    // ));
+                    self.raw_input.screen_rect = Some(Rect::from_min_size(
+                        Default::default(),
+                        vec2(physical_size.width as f32, physical_size.height as f32)
+                            / self.scale_factor as f32,
+                    ));
                 }
                 ScaleFactorChanged {
                     scale_factor,
                     new_inner_size,
                 } => {
                     self.scale_factor = *scale_factor;
-                    // self.raw_input.pixels_per_point = Some(*scale_factor as f32);
-                    // self.raw_input.screen_rect = Some(Rect::from_min_size(
-                    //     Default::default(),
-                    //     vec2(new_inner_size.width as f32, new_inner_size.height as f32)
-                    //         / self.scale_factor as f32,
-                    // ));
+                    self.raw_input.pixels_per_point = Some(*scale_factor as f32);
+                    self.raw_input.screen_rect = Some(Rect::from_min_size(
+                        Default::default(),
+                        vec2(new_inner_size.width as f32, new_inner_size.height as f32)
+                            / self.scale_factor as f32,
+                    ));
                 }
                 MouseInput { state, button, .. } => {
                     if let winit::event::MouseButton::Other(..) = button {
