@@ -12,11 +12,11 @@ pub fn draw(ctx: &KguiContext) {
     let text_shape = ctx.fonts(|fonts| {
         return Shape::text(
             fonts,
-            pos2(300.0, 300.0),
+            pos2(210.0, 210.0),
             Align2::LEFT_TOP,
             "JS",
             FontId {
-                size: 30.0,
+                size: 50.0,
                 family: epaint::FontFamily::Monospace,
             },
             Color32::WHITE,
@@ -32,8 +32,8 @@ pub fn draw(ctx: &KguiContext) {
             10.0,
             hex_color!("#E8D44D"),
         ),
-        Shape::circle_stroke(pos2(200.0, 200.0), 50.0, Stroke::new(6.0, Color32::BLACK)),
         text_shape,
+        Shape::circle_stroke(pos2(200.0, 200.0), 50.0, Stroke::new(6.0, Color32::BLACK)),
     ]);
 
     ctx.graphics_mut(|graphics| {
