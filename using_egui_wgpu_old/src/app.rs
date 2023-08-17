@@ -1,9 +1,9 @@
-use std::{cell::RefCell, time::Instant};
+use std::{cell::RefCell, f32::consts::PI, time::Instant};
 
 use egui::{
-    epaint::{CircleShape, CubicBezierShape, Shadow},
+    epaint::{CircleShape, CubicBezierShape, QuadraticBezierShape, Shadow, TextShape},
     hex_color, pos2, vec2, Color32, Context, FontFamily, FontId, Label, Layout, Pos2, Rect,
-    Response, RichText, Shape, Stroke, Ui, Vec2, Widget, WidgetText,
+    Response, RichText, Sense, Shape, Stroke, Ui, Vec2, Widget, WidgetText,
 };
 
 use crate::read_audio_file::{read_audio_file, AudioTrackInfo};
@@ -29,9 +29,30 @@ impl<'a> App<'a> {
             ],
             current_editor: 1,
             sample_dash: SampleDash::new(
+                vec![(
+                    "Live session".into(),
+                    hex_color!("#ffffff"),
+                    hex_color!("#C7077A"),
+                )],
                 "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
             ),
-            easing_dash: EasingDash::new(),
+            easing_dash: EasingDash::new(vec![
+                (
+                    "Live session".into(),
+                    hex_color!("#ffffff"),
+                    hex_color!("#C7077A"),
+                ),
+                (
+                    "Audio clip".into(),
+                    hex_color!("#ffffff"),
+                    hex_color!("#0B07C7"),
+                ),
+                (
+                    "Envelope".into(),
+                    hex_color!("#000000"),
+                    hex_color!("#FFDB21"),
+                ),
+            ]),
         }
     }
 
@@ -138,11 +159,43 @@ fn setup_custom_fonts(ctx: &egui::Context) {
 
 const DASH_HEIGHT: f32 = 256.0;
 
-pub struct EasingDash {}
+#[derive(Debug, Clone)]
+pub enum Easing {
+    Linear,
+    Quad(Pos2),
+    Cubic(Pos2, Pos2),
+    Smooth(Vec<Pos2>),
+}
+
+impl Easing {
+    pub fn default_linear() -> Easing {
+        Easing::Linear
+    }
+
+    pub fn default_quad() -> Easing {
+        Easing::Quad(pos2(0.8, 0.1))
+    }
+
+    pub fn default_cubic() -> Easing {
+        Easing::Cubic(pos2(0.4, 0.0), pos2(0.9, 0.3))
+    }
+
+    pub fn default_smooth() -> Easing {
+        Easing::Smooth(vec![])
+    }
+}
+
+pub struct EasingDash {
+    ancestors: Vec<(String, Color32, Color32)>,
+    easing: Easing,
+}
 
 impl EasingDash {
-    pub fn new() -> Self {
-        Self {}
+    pub fn new(ancestors: Vec<(String, Color32, Color32)>) -> Self {
+        Self {
+            ancestors,
+            easing: Easing::Cubic(pos2(0.4, 0.0), pos2(0.9, 0.3)),
+        }
     }
 
     fn ui(&mut self, ui: &mut Ui) {
@@ -160,11 +213,37 @@ impl EasingDash {
                 ui.add_space(20.0);
 
                 ui.horizontal(|ui| {
-                    let mut prev_pane = rect.clone();
-                    prev_pane.set_width(40.0);
-                    ui.painter()
-                        .rect_filled(prev_pane, 0.0, hex_color!("#C7077A"));
-                    ui.add_space(40.0);
+                    let mut ancestor_pane = rect.clone();
+                    ancestor_pane.set_width(40.0);
+
+                    for (i, (ancestor_title, title_color, bg_color)) in
+                        self.ancestors.iter().enumerate()
+                    {
+                        ui.painter().rect_filled(ancestor_pane, 0.0, *bg_color);
+
+                        let galley = ui.painter().layout(
+                            ancestor_title.into(),
+                            FontId {
+                                size: 18.0,
+                                family: FontFamily::Name("Bold".into()),
+                            },
+                            *title_color,
+                            f32::INFINITY,
+                        );
+
+                        ui.painter().add(TextShape {
+                            pos: pos2(30.0 + i as f32 * 40.0, 54.0 + 20.0),
+                            galley,
+                            angle: 0.5 * PI,
+                            underline: Stroke::NONE,
+                            override_text_color: None,
+                        });
+
+                        ancestor_pane.min.x += 40.0;
+                        ancestor_pane.max.x += 40.0;
+                    }
+
+                    ui.add_space(40.0 * self.ancestors.len() as f32);
 
                     ui.add_space(20.0);
                     ui.label(
@@ -175,99 +254,192 @@ impl EasingDash {
                     );
                 });
 
-                ui.ctx().request_repaint();
+                let (response, painter) =
+                    ui.allocate_painter(vec2(f32::INFINITY, DASH_HEIGHT - 50.0), Sense::drag());
 
-                let paint_left_top = rect.left_top() + vec2(60.0, 50.0);
+                let le = self.ancestors.len() as f32 * 40.0;
+
+                let paint_left_top = rect.left_top() + vec2(le + 20.0, 50.0);
 
                 let paint_rect = Rect::from_min_max(
                     paint_left_top,
                     paint_left_top
                         + vec2(
-                            ui.clip_rect().width() - 60.0 - 20.0,
+                            ui.clip_rect().width() - le - 20.0 - 20.0,
                             DASH_HEIGHT - 50.0 - 30.0,
                         ),
                 );
 
-                let mut bezier_rect = paint_rect.clone();
-                bezier_rect.min += vec2(170.0, 20.0);
-                bezier_rect.max -= vec2(120.0, 20.0);
-                let w = bezier_rect.width();
-                let h = bezier_rect.height();
-                let Pos2 { x: xmin, y: ymin } = bezier_rect.left_top();
-                let Pos2 { x: xmax, y: ymax } = bezier_rect.right_bottom();
+                // debug
+                // ui.painter()
+                //     .rect_filled(paint_rect, 0.0, hex_color!("#cc000077"));
+
+                let mut easing_rect = paint_rect.clone();
+                easing_rect.min += vec2(170.0, 20.0);
+                easing_rect.max -= vec2(120.0, 20.0);
+                let w = easing_rect.width();
+                let h = easing_rect.height();
+                let Pos2 { x: xmin, y: ymin } = easing_rect.left_top();
+                let Pos2 { x: xmax, y: ymax } = easing_rect.right_bottom();
+
+                let a_pos = pos2(xmin, ymax);
+                let b_pos = pos2(xmax, ymin);
+
+                let fat_stroke = Stroke::new(4.0, hex_color!("#000000"));
 
                 let mut shapes = vec![];
 
-                let a = pos2(xmin, ymax);
-                let b = pos2(xmax, ymin);
-                let c1 = pos2(xmin + 0.3 * w, ymax);
-                let c2 = pos2(xmax - 0.2 * w, ymin + 0.7 * h);
+                match &self.easing.clone() {
+                    Easing::Linear => {
+                        shapes.push(Shape::line_segment([a_pos, b_pos], fat_stroke));
+                    }
+                    Easing::Quad(cp) => {
+                        let cp_pos = a_pos + cp.to_vec2() * vec2(w, -h);
 
-                shapes.push(Shape::CubicBezier(CubicBezierShape::from_points_stroke(
-                    [a, c1, c2, b],
-                    false,
-                    Color32::TRANSPARENT,
-                    Stroke::new(4.0, hex_color!("#000000")),
-                )));
+                        shapes.push(Shape::QuadraticBezier(
+                            QuadraticBezierShape::from_points_stroke(
+                                [a_pos, cp_pos, b_pos],
+                                false,
+                                Color32::TRANSPARENT,
+                                fat_stroke,
+                            ),
+                        ));
 
-                shapes.extend(Shape::dashed_line(
-                    &[a, c1],
-                    Stroke::new(4.0, hex_color!("#000000")),
-                    4.0,
-                    4.0,
-                ));
+                        shapes.extend(Shape::dashed_line(&[a_pos, cp_pos], fat_stroke, 4.0, 4.0));
 
-                shapes.extend(Shape::dashed_line(
-                    &[b, c2],
-                    Stroke::new(4.0, hex_color!("#000000")),
-                    4.0,
-                    4.0,
-                ));
+                        shapes.extend(Shape::dashed_line(&[b_pos, cp_pos], fat_stroke, 4.0, 4.0));
+
+                        {
+                            let cp_rect = Rect::from_center_size(cp_pos, vec2(20.0, 20.0));
+                            let cp_id = response.id.with(0);
+                            let cp_response = ui.interact(cp_rect, cp_id, Sense::drag());
+
+                            if cp_response.drag_delta() != Vec2::ZERO {
+                                let d =
+                                    cp_response.drag_delta() / easing_rect.size() * vec2(1.0, -1.0);
+                                let cp = (*cp + d).clamp(pos2(-0.2, -0.2), pos2(1.2, 1.2));
+
+                                self.easing = Easing::Quad(cp);
+                            }
+                        }
+
+                        shapes.push(Shape::Circle(CircleShape {
+                            center: cp_pos,
+                            radius: 8.0,
+                            stroke: fat_stroke,
+                            fill: bg,
+                        }));
+                    }
+                    Easing::Cubic(c1, c2) => {
+                        let c1_pos = a_pos + c1.to_vec2() * vec2(w, -h);
+                        let c2_pos = a_pos + c2.to_vec2() * vec2(w, -h);
+
+                        shapes.push(Shape::CubicBezier(CubicBezierShape::from_points_stroke(
+                            [a_pos, c1_pos, c2_pos, b_pos],
+                            false,
+                            Color32::TRANSPARENT,
+                            fat_stroke,
+                        )));
+
+                        shapes.extend(Shape::dashed_line(&[a_pos, c1_pos], fat_stroke, 4.0, 4.0));
+
+                        shapes.extend(Shape::dashed_line(&[b_pos, c2_pos], fat_stroke, 4.0, 4.0));
+
+                        for (i, &cp) in [c1_pos, c2_pos].iter().enumerate() {
+                            let cp_rect = Rect::from_center_size(cp, vec2(20.0, 20.0));
+                            let cp_id = response.id.with(i);
+                            let cp_response = ui.interact(cp_rect, cp_id, Sense::drag());
+
+                            if cp_response.drag_delta() != Vec2::ZERO {
+                                let d =
+                                    cp_response.drag_delta() / easing_rect.size() * vec2(1.0, -1.0);
+                                let cp = (if i == 0 { *c1 } else { *c2 } + d)
+                                    .clamp(pos2(-0.2, -0.2), pos2(1.2, 1.2));
+
+                                if i == 0 {
+                                    self.easing = Easing::Cubic(cp, *c2);
+                                } else {
+                                    self.easing = Easing::Cubic(*c1, cp);
+                                }
+                            }
+
+                            shapes.push(Shape::Circle(CircleShape {
+                                center: cp,
+                                radius: 8.0,
+                                stroke: fat_stroke,
+                                fill: bg,
+                            }));
+                        }
+                    }
+                    Easing::Smooth(_) => {
+                        // TODO
+                    }
+                }
 
                 shapes.push(Shape::Circle(CircleShape {
-                    center: a,
+                    center: a_pos,
                     radius: 9.0,
-                    stroke: Stroke::new(4.0, hex_color!("#000000")),
+                    stroke: fat_stroke,
                     fill: bg,
                 }));
 
                 shapes.push(Shape::Circle(CircleShape {
-                    center: b,
+                    center: b_pos,
                     radius: 9.0,
-                    stroke: Stroke::new(4.0, hex_color!("#000000")),
+                    stroke: fat_stroke,
                     fill: bg,
                 }));
 
-                shapes.push(Shape::Circle(CircleShape {
-                    center: c1,
-                    radius: 8.0,
-                    stroke: Stroke::new(4.0, hex_color!("#000000")),
-                    fill: bg,
-                }));
+                painter.extend(shapes);
 
-                shapes.push(Shape::Circle(CircleShape {
-                    center: c2,
-                    radius: 8.0,
-                    stroke: Stroke::new(4.0, hex_color!("#000000")),
-                    fill: bg,
-                }));
-
-                ui.painter().extend(shapes);
-
-                let buttons_left_top = rect.left_top() + vec2(60.0, 70.0);
                 ui.allocate_ui_at_rect(
                     Rect {
-                        min: buttons_left_top,
-                        max: buttons_left_top + vec2(60.0, 200.0),
+                        min: paint_left_top + vec2(0.0, 20.0),
+                        max: paint_left_top + vec2(60.0, 200.0),
                     },
                     |ui| {
                         ui.vertical(|ui| {
                             ui.spacing_mut().item_spacing = vec2(0.0, 8.0);
 
-                            ui.add(MiniButton::new("linear", false));
-                            ui.add(MiniButton::new("quad", false));
-                            ui.add(MiniButton::new("bezier", true));
-                            ui.add(MiniButton::new("smooth", false));
+                            if ui
+                                .add(MiniButton::new(
+                                    "linear",
+                                    matches!(self.easing, Easing::Linear),
+                                ))
+                                .clicked()
+                            {
+                                self.easing = Easing::default_linear();
+                            }
+
+                            if ui
+                                .add(MiniButton::new(
+                                    "quad",
+                                    matches!(self.easing, Easing::Quad(_)),
+                                ))
+                                .clicked()
+                            {
+                                self.easing = Easing::default_quad();
+                            }
+
+                            if ui
+                                .add(MiniButton::new(
+                                    "bezier",
+                                    matches!(self.easing, Easing::Cubic(_, _)),
+                                ))
+                                .clicked()
+                            {
+                                self.easing = Easing::default_cubic();
+                            }
+
+                            if ui
+                                .add(MiniButton::new(
+                                    "smooth",
+                                    matches!(self.easing, Easing::Smooth(_)),
+                                ))
+                                .clicked()
+                            {
+                                self.easing = Easing::default_smooth();
+                            }
                         });
                     },
                 );
@@ -277,6 +449,7 @@ impl EasingDash {
 }
 
 pub struct SampleDash {
+    ancestors: Vec<(String, Color32, Color32)>,
     audio_file: AudioTrackInfo,
     width: usize,
     summary: RefCell<Option<Summary>>,
@@ -288,11 +461,12 @@ struct Summary {
 }
 
 impl SampleDash {
-    pub fn new(filepath: &str) -> Self {
+    pub fn new(ancestors: Vec<(String, Color32, Color32)>, filepath: &str) -> Self {
         let width = 0;
         let audio_file = read_audio_file(filepath);
 
         Self {
+            ancestors,
             audio_file,
             width,
             summary: RefCell::new(None),
@@ -312,11 +486,37 @@ impl SampleDash {
                 ui.add_space(20.0);
 
                 ui.horizontal(|ui| {
-                    let mut prev_pane = rect.clone();
-                    prev_pane.set_width(40.0);
-                    ui.painter()
-                        .rect_filled(prev_pane, 0.0, hex_color!("#C7077A"));
-                    ui.add_space(40.0);
+                    let mut ancestor_pane = rect.clone();
+                    ancestor_pane.set_width(40.0);
+
+                    for (i, (ancestor_title, title_color, bg_color)) in
+                        self.ancestors.iter().enumerate()
+                    {
+                        ui.painter().rect_filled(ancestor_pane, 0.0, *bg_color);
+
+                        let galley = ui.painter().layout(
+                            ancestor_title.into(),
+                            FontId {
+                                size: 18.0,
+                                family: FontFamily::Name("Bold".into()),
+                            },
+                            *title_color,
+                            f32::INFINITY,
+                        );
+
+                        ui.painter().add(TextShape {
+                            pos: pos2(30.0 + i as f32 * 40.0, 54.0 + 20.0),
+                            galley,
+                            angle: 0.5 * PI,
+                            underline: Stroke::NONE,
+                            override_text_color: None,
+                        });
+
+                        ancestor_pane.min.x += 40.0;
+                        ancestor_pane.max.x += 40.0;
+                    }
+
+                    ui.add_space(40.0 * self.ancestors.len() as f32);
 
                     ui.add_space(20.0);
                     ui.label(
