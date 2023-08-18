@@ -82,6 +82,8 @@ impl Dash for EasingDash {
             max: rect.max - vec2(100.0, margin),
         };
 
+        let max_move_rect = easing_rect.expand(margin * 0.7);
+
         // // debug
         // ui.painter()
         //     .rect_filled(easing_rect, 0.0, hex_color!("#cc000077"));
@@ -124,12 +126,14 @@ impl Dash for EasingDash {
                     let cp_response = ui.interact(cp_rect, cp_id, Sense::drag());
 
                     if cp_response.drag_delta() != Vec2::ZERO {
-                        let cp_pos = (cp_pos + cp_response.drag_delta() - easing_rect.min).clamp(
-                            vec2(-margin * 0.7, -margin * 0.7),
-                            easing_rect.size() + vec2(margin * 0.7, margin * 0.7),
-                        );
+                        let hover_pos = ui.input(|i| i.pointer.hover_pos());
 
-                        let cp = pos2(cp_pos.x / w, 1.0 - cp_pos.y / h);
+                        let new_cp_pos = hover_pos
+                            .unwrap_or(cp_pos)
+                            .clamp(max_move_rect.min, max_move_rect.max)
+                            - easing_rect.min;
+
+                        let cp = pos2(new_cp_pos.x / w, 1.0 - new_cp_pos.y / h);
 
                         self.easing = Easing::Quad(cp);
                     }
@@ -163,12 +167,14 @@ impl Dash for EasingDash {
                     let cp_response = ui.interact(cp_rect, cp_id, Sense::drag());
 
                     if cp_response.drag_delta() != Vec2::ZERO {
-                        let cp_pos = (cp_pos + cp_response.drag_delta() - easing_rect.min).clamp(
-                            vec2(-margin * 0.7, -margin * 0.7),
-                            easing_rect.size() + vec2(margin * 0.7, margin * 0.7),
-                        );
+                        let hover_pos = ui.input(|i| i.pointer.hover_pos());
 
-                        let cp = pos2(cp_pos.x / w, 1.0 - cp_pos.y / h);
+                        let new_cp_pos = hover_pos
+                            .unwrap_or(cp_pos)
+                            .clamp(max_move_rect.min, max_move_rect.max)
+                            - easing_rect.min;
+
+                        let cp = pos2(new_cp_pos.x / w, 1.0 - new_cp_pos.y / h);
 
                         if i == 0 {
                             self.easing = Easing::Cubic(cp, *c2);
