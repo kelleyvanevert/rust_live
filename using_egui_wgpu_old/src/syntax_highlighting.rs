@@ -13,8 +13,9 @@ pub fn code_view_ui(ui: &mut egui::Ui, mut code: &str) {
         egui::TextEdit::multiline(&mut code)
             .font(egui::TextStyle::Monospace)
             .code_editor()
-            .desired_rows(1)
+            // .desired_rows(1)
             .lock_focus(true)
+            .desired_width(f32::INFINITY)
             .layouter(&mut layouter),
     );
 }

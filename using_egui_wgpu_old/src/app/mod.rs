@@ -5,6 +5,7 @@ use crate::syntax_highlighting::code_view_ui;
 use self::{
     dash::{collapsed_ancestor_pane, Dash, DASH_HEIGHT},
     easing_dash::EasingDash,
+    editor::Editor,
     envelope_dash::EnvelopeDash,
     sample_dash::SampleDash,
     session_dash::SessionDash,
@@ -13,6 +14,7 @@ use self::{
 
 mod dash;
 mod easing_dash;
+mod editor;
 mod envelope_dash;
 mod mini_button;
 mod sample_dash;
@@ -33,6 +35,7 @@ enum StateUpdate {
 pub struct App<'a> {
     state: AppState<'a>,
     updates: Vec<StateUpdate>,
+    editor: Editor,
 }
 
 impl<'a> App<'a> {
@@ -59,6 +62,7 @@ impl<'a> App<'a> {
                 ],
             },
             updates: vec![],
+            editor: Editor::new(),
         }
     }
 
@@ -134,7 +138,8 @@ impl<'a> App<'a> {
 
                         let mut set_editor = None;
                         for (i, &filename) in self.state.editors.iter().enumerate() {
-                            let btn = ui.add(TabButton::new(filename, self.state.current_editor == i));
+                            let btn =
+                                ui.add(TabButton::new(filename, self.state.current_editor == i));
                             if btn.clicked() {
                                 set_editor = Some(i);
                             }
@@ -159,8 +164,18 @@ impl<'a> App<'a> {
                         ui.set_min_height(DASH_HEIGHT);
 
                         let mut clicked = None;
-                        for (i, dash) in self.state.dash[..self.state.dash.len() - 1].iter().enumerate() {
-                            if collapsed_ancestor_pane(ui, dash.title(), dash.title_color(), dash.bg_color()).clicked() {
+                        for (i, dash) in self.state.dash[..self.state.dash.len() - 1]
+                            .iter()
+                            .enumerate()
+                        {
+                            if collapsed_ancestor_pane(
+                                ui,
+                                dash.title(),
+                                dash.title_color(),
+                                dash.bg_color(),
+                            )
+                            .clicked()
+                            {
                                 clicked = Some(i);
                             }
                         }
@@ -174,15 +189,17 @@ impl<'a> App<'a> {
                     },
                 );
 
-                ui.add_space(20.0);
-                ui.horizontal(|ui| {
-                    ui.add_space(20.0);
-                    ui.vertical(|ui| {
-                        code_view_ui(ui, "let kick = {\n    let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];\n    sin[40hz] * env\n};\n\nlet bpm = 120;\nlet beat = 60/bpm;\n\nlet hat = sample[\"/Users/kelley/emp/2022-11 Blabl Project/Samples/Processed/Freeze/Freeze RES [2022-11-23 221454].wav\"];\n\nlet house = kick * every(beat) + hat * (every(.5*beat) + .5*beat);\n\nplay house;");
-                     });
-                    ui.add_space(20.0);
-                });
-            }).response
+                ui.add_space(3.0); // ?? why?
+
+                self.editor.ui(ui);
+                // ScrollArea::vertical()
+                //     .scroll_bar_visibility(scroll_area::ScrollBarVisibility::AlwaysVisible) // ?? doesn't show?
+                //     .drag_to_scroll(false) // ?? doesn't work?
+                //     .show(ui, |ui| {
+                //         self.editor.ui(ui);
+                //     });
+            })
+            .response
     }
 }
 
