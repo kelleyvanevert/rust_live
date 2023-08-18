@@ -227,8 +227,8 @@ fn setup_custom_fonts(ctx: &egui::Context) {
     );
 
     fonts.font_data.insert(
-        "Fira Code SemiBold".to_owned(),
-        egui::FontData::from_static(include_bytes!("../../assets/fonts/FiraCode-SemiBold.ttf")),
+        "Fira Code Bold".to_owned(),
+        egui::FontData::from_static(include_bytes!("../../assets/fonts/FiraCode-Bold.ttf")),
     );
 
     // Put my font first (highest priority) for proportional text:
@@ -244,7 +244,7 @@ fn setup_custom_fonts(ctx: &egui::Context) {
 
     fonts.families.insert(
         egui::FontFamily::Name("Code Bold".into()),
-        vec!["Fira Code SemiBold".to_owned()],
+        vec!["Fira Code Bold".to_owned()],
     );
 
     // Put my font as last fallback for monospace:

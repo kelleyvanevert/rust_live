@@ -1,4 +1,5 @@
 #![feature(let_chains)]
+#![feature(if_let_guard)]
 
 use std::iter;
 use std::time::{Duration, Instant, SystemTime};
