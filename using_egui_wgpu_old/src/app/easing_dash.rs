@@ -10,7 +10,6 @@ pub enum Easing {
     Linear,
     Quad(Pos2),
     Cubic(Pos2, Pos2),
-    Smooth(Vec<Pos2>),
 }
 
 impl Easing {
@@ -24,10 +23,6 @@ impl Easing {
 
     pub fn default_cubic() -> Easing {
         Easing::Cubic(pos2(0.4, 0.0), pos2(0.9, 0.3))
-    }
-
-    pub fn default_smooth() -> Easing {
-        Easing::Smooth(vec![])
     }
 }
 
@@ -191,9 +186,6 @@ impl Dash for EasingDash {
                     }));
                 }
             }
-            Easing::Smooth(_) => {
-                // TODO
-            }
         }
 
         shapes.push(Shape::Circle(CircleShape {
@@ -249,16 +241,6 @@ impl Dash for EasingDash {
                         .clicked()
                     {
                         self.easing = Easing::default_cubic();
-                    }
-
-                    if ui
-                        .add(MiniButton::new(
-                            "smooth",
-                            matches!(self.easing, Easing::Smooth(_)),
-                        ))
-                        .clicked()
-                    {
-                        self.easing = Easing::default_smooth();
                     }
                 });
             },
