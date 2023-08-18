@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 
 use std::iter;
-use std::time::Instant;
+use std::time::{Duration, Instant, SystemTime};
 
 use app::App;
 use egui::FontDefinitions;
@@ -108,6 +108,15 @@ fn main() {
     // Display the demo application that ships with egui.
     let mut app = App::new(&platform.context());
 
+    // // FPS and window updating:
+    // let mut frameno = 0;
+    // let mut then = SystemTime::now();
+    // let mut now = SystemTime::now();
+    // let mut fps = 0;
+    // // change '60.0' if you want different FPS cap
+    // let target_framerate = Duration::from_secs_f64(1.0 / 60.0);
+    // let mut delta_time = Instant::now();
+
     let start_time = Instant::now();
     event_loop.run(move |event, _, control_flow| {
         // Pass the winit events to the platform integration.
@@ -115,6 +124,15 @@ fn main() {
 
         match event {
             RedrawRequested(..) => {
+                // frameno += 1;
+                // fps += 1;
+                // if now.duration_since(then).unwrap().as_millis() > 1000 {
+                //     window.set_title(&format!("Frame {}, FPS: {}", frameno, fps));
+                //     fps = 0;
+                //     then = now;
+                // }
+                // now = SystemTime::now();
+
                 platform.update_time(start_time.elapsed().as_secs_f64());
 
                 let output_frame = match surface.get_current_texture() {
@@ -136,6 +154,8 @@ fn main() {
 
                 // Begin to draw the UI frame.
                 platform.begin_frame();
+
+                app.begin_frame();
 
                 // Draw the demo application.
                 let _response = app.ui(&platform.context());
@@ -190,6 +210,15 @@ fn main() {
             }
             MainEventsCleared => {
                 window.request_redraw();
+                // if target_framerate <= delta_time.elapsed() {
+                //     window.request_redraw();
+                //     delta_time = Instant::now();
+                // } else {
+                //     *control_flow = ControlFlow::WaitUntil(
+                //         Instant::now().checked_sub(delta_time.elapsed()).unwrap()
+                //             + target_framerate,
+                //     );
+                // }
             }
             WindowEvent { event, .. } => match event {
                 winit::event::WindowEvent::Resized(size) => {

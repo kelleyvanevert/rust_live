@@ -19,10 +19,20 @@ mod sample_dash;
 mod session_dash;
 mod tab_button;
 
-pub struct App<'a> {
+struct AppState<'a> {
     editors: Vec<&'a str>,
     current_editor: usize,
     dash: Vec<Box<dyn Dash>>,
+}
+
+enum StateUpdate {
+    SwitchToEditor(usize),
+    MoveToAncestor(usize),
+}
+
+pub struct App<'a> {
+    state: AppState<'a>,
+    updates: Vec<StateUpdate>,
 }
 
 impl<'a> App<'a> {
@@ -32,49 +42,61 @@ impl<'a> App<'a> {
         setup_custom_fonts(ctx);
 
         Self {
-            editors: vec![
-                "exp_1.live".into(),
-                "Untitled-1".into(),
-                "Untitled-2".into(),
-            ],
-            current_editor: 0,
-            dash: vec![
-                Box::new(SessionDash::new()),
-                Box::new(SampleDash::new(
-                    "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
-                )),
-                Box::new(EnvelopeDash::new()),
-                Box::new(EasingDash::new()),
-            ],
+            state: AppState {
+                editors: vec![
+                    "exp_1.live".into(),
+                    "Untitled-1".into(),
+                    "Untitled-2".into(),
+                ],
+                current_editor: 0,
+                dash: vec![
+                    Box::new(SessionDash::new()),
+                    Box::new(SampleDash::new(
+                        "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
+                    )),
+                    Box::new(EnvelopeDash::new()),
+                    Box::new(EasingDash::new()),
+                ],
+            },
+            updates: vec![],
         }
     }
 
-    fn set_editor(&mut self, index: usize) {
-        self.current_editor = index;
+    pub fn begin_frame(&mut self) {
+        for update in self.updates.drain(0..) {
+            match update {
+                StateUpdate::SwitchToEditor(index) => {
+                    self.state.current_editor = index;
 
-        if index == 0 {
-            self.dash = vec![
-                //
-                Box::new(SessionDash::new()),
-                Box::new(SampleDash::new(
-                    "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
-                )),
-                Box::new(EnvelopeDash::new()),
-                Box::new(EasingDash::new()),
-            ];
-        } else if index == 1 {
-            self.dash = vec![
-                //
-                Box::new(SessionDash::new()),
-                Box::new(SampleDash::new(
-                    "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
-                )),
-            ];
-        } else if index == 2 {
-            self.dash = vec![
-                //
-                Box::new(SessionDash::new()),
-            ];
+                    if index == 0 {
+                        self.state.dash = vec![
+                            //
+                            Box::new(SessionDash::new()),
+                            Box::new(SampleDash::new(
+                                "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
+                            )),
+                            Box::new(EnvelopeDash::new()),
+                            Box::new(EasingDash::new()),
+                        ];
+                    } else if index == 1 {
+                        self.state.dash = vec![
+                            //
+                            Box::new(SessionDash::new()),
+                            Box::new(SampleDash::new(
+                                "../editor/res/samples/Freeze RES [2022-11-23 221454].wav",
+                            )),
+                        ];
+                    } else if index == 2 {
+                        self.state.dash = vec![
+                            //
+                            Box::new(SessionDash::new()),
+                        ];
+                    }
+                }
+                StateUpdate::MoveToAncestor(index) => {
+                    self.state.dash.splice(index + 1.., []);
+                }
+            }
         }
     }
 
@@ -111,14 +133,14 @@ impl<'a> App<'a> {
                         ui.add_space(92.);
 
                         let mut set_editor = None;
-                        for (i, &filename) in self.editors.iter().enumerate() {
-                            let btn = ui.add(TabButton::new(filename, self.current_editor == i));
+                        for (i, &filename) in self.state.editors.iter().enumerate() {
+                            let btn = ui.add(TabButton::new(filename, self.state.current_editor == i));
                             if btn.clicked() {
                                 set_editor = Some(i);
                             }
                         }
                         if let Some(index) = set_editor {
-                            self.set_editor(index);
+                            self.updates.push(StateUpdate::SwitchToEditor(index));
                         }
                     },
                 );
@@ -137,16 +159,16 @@ impl<'a> App<'a> {
                         ui.set_min_height(DASH_HEIGHT);
 
                         let mut clicked = None;
-                        for (i, dash) in self.dash[..self.dash.len() - 1].iter().enumerate() {
+                        for (i, dash) in self.state.dash[..self.state.dash.len() - 1].iter().enumerate() {
                             if collapsed_ancestor_pane(ui, dash.title(), dash.title_color(), dash.bg_color()).clicked() {
                                 clicked = Some(i);
                             }
                         }
                         if let Some(i) = clicked {
-                            self.dash.splice(i + 1.., []);
+                            self.updates.push(StateUpdate::MoveToAncestor(i));
                         }
 
-                        if let Some(last_dash) = self.dash.last_mut() {
+                        if let Some(last_dash) = self.state.dash.last_mut() {
                             last_dash.ui(ui);
                         }
                     },
