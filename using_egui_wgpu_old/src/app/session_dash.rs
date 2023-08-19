@@ -214,6 +214,11 @@ impl Dash for SessionDash {
         let ymin = specto_rect.min.y;
         let ymax = specto_rect.max.y;
 
+        let bin_width = 12.0;
+        let num_bins = (specto_rect.width() / bin_width) as usize;
+
+        let mut bins = vec![vec![]; num_bins + 1];
+
         if let Some(info) = &self.recording {
             let info = info.lock().unwrap();
             if let Some(spectrum) = &info.spectrum {
@@ -235,14 +240,36 @@ impl Dash for SessionDash {
                             (MIN_FREQ.log2(), MAX_FREQ.log2()),
                             (xmin, xmax),
                         );
+
+                        let i = ((x - xmin) / bin_width) as usize;
+                        bins[i].push(y);
+
                         pos2(x, y)
                     })
                     .collect_vec();
 
-                painter.add(Shape::line(
-                    line_points,
-                    Stroke::new(5.0, hex_color!("#ffffff")),
-                ));
+                // painter.add(Shape::line(
+                //     line_points,
+                //     Stroke::new(2.0, hex_color!("#ffffff")),
+                // ));
+
+                for (i, bin) in bins.iter().enumerate() {
+                    let x = xmin + i as f32 * bin_width;
+                    let y = if bin.len() == 0 {
+                        ymax
+                    } else {
+                        bin.iter().sum::<f32>() / bin.len() as f32
+                    };
+
+                    painter.add(Shape::rect_filled(
+                        Rect {
+                            min: pos2(x, y),
+                            max: pos2(x + bin_width - 2.0, ymax),
+                        },
+                        0.0,
+                        hex_color!("#ffffff"),
+                    ));
+                }
             }
         }
     }
