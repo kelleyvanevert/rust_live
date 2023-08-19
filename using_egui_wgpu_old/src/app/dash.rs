@@ -41,4 +41,6 @@ pub trait Dash {
     fn title(&self) -> String;
     fn title_color(&self) -> Color32;
     fn bg_color(&self) -> Color32;
+
+    fn set_active(&mut self, _active: bool) {}
 }
