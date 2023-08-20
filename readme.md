@@ -34,11 +34,22 @@ This is my most ambitious Rust project so far (and also just most ambitious hobb
 
 See `/editor`
 
+The **killer features**:
+
+- Multi-selection editing
+- You can drag an audio sample into the editor and it instantiates a widget with the sample's waveform — the sample widget is like any other character, in that you can copy/paste it, move it around, etc.
+
 ![](pics/stuff_that_looks_like_live_code.png)
 
 ## Second prototype
 
 See `/using_egui_wgpu_old`
+
+The new **killer features**:
+
+- "Artist impression" of the UI I think I'm going for, with some basic proof of concept interactions
+- A working "Easing" dashboard widget
+- Audio spectrum & waveform from microphone input, in the "Live session" dashboard widget
 
 ![](pics/easing_dash_1.png)
 
