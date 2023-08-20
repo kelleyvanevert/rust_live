@@ -9,21 +9,28 @@ use spectrum_analyzer::windows::hann_window;
 use spectrum_analyzer::{samples_fft_to_spectrum, FrequencyLimit, FrequencySpectrum};
 
 use super::dash::{Dash, DASH_HEIGHT};
+use super::mini_button::MiniButton;
 
 const MIN_FREQ: f32 = 20.0;
 const MAX_FREQ: f32 = 20_000.0;
-const FFT_SAMPLE_BUFFER_SIZE: usize = 4096 * 2;
+const SAMPLE_BUFFER_SIZE: usize = 4096 * 2;
 
 struct RecordingInfo {
     quit: bool,
     sample_rate: u32,
-    latest_samples: [f32; FFT_SAMPLE_BUFFER_SIZE],
+    latest_samples: [f32; SAMPLE_BUFFER_SIZE],
     spectrum: Option<FrequencySpectrum>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum VizType {
+    Spectrum,
+    Wave,
 }
 
 pub struct SessionDash {
     recording: Option<Arc<Mutex<RecordingInfo>>>,
-
+    viz: VizType,
     val_max: f32,
     mem_highest: Option<Vec<f32>>,
 }
@@ -32,6 +39,7 @@ impl SessionDash {
     pub fn new() -> Self {
         Self {
             recording: None,
+            viz: VizType::Spectrum,
             val_max: 0.005,
             mem_highest: None,
         }
@@ -49,7 +57,7 @@ impl SessionDash {
         let info = Arc::new(Mutex::new(RecordingInfo {
             quit: false,
             sample_rate: 0,
-            latest_samples: [0.0; FFT_SAMPLE_BUFFER_SIZE],
+            latest_samples: [0.0; SAMPLE_BUFFER_SIZE],
             spectrum: None,
         }));
 
@@ -215,128 +223,167 @@ impl Dash for SessionDash {
                             .family(FontFamily::Name("Bold".into()))
                             .color(self.title_color()),
                     );
+
+                    ui.horizontal_centered(|ui| {
+                        ui.add_space(20.0);
+                        if ui
+                            .add(MiniButton::new("spectrum", self.viz == VizType::Spectrum).light())
+                            .clicked()
+                        {
+                            self.viz = VizType::Spectrum;
+                        }
+                        ui.add_space(16.0);
+                        if ui
+                            .add(MiniButton::new("wave", self.viz == VizType::Wave).light())
+                            .clicked()
+                        {
+                            self.viz = VizType::Wave;
+                        }
+                    });
                 });
             },
         );
 
-        let mut specto_rect = rect.shrink2(vec2(40.0, 10.0));
-        specto_rect.min.y += 40.0;
-        let xmin = specto_rect.min.x;
-        // let xmax = specto_rect.max.x;
-        // let ymin = specto_rect.min.y;
-        let ymax = specto_rect.max.y;
-        // let w = specto_rect.width();
-        let h = specto_rect.height();
+        let mut viz_rect = rect.shrink2(vec2(40.0, 10.0));
+        viz_rect.min.y += 40.0;
+        let xmin = viz_rect.min.x;
+        // let xmax = viz_rect.max.x;
+        // let ymin = viz_rect.min.y;
+        let ymax = viz_rect.max.y;
+        let w = viz_rect.width();
+        let h = viz_rect.height();
 
         // // debug
         // ui.painter()
-        //     .rect_filled(specto_rect, 0.0, hex_color!("#cc000077"));
+        //     .rect_filled(viz_rect, 0.0, hex_color!("#cc000077"));
 
-        let dm = 0.00005;
-        // let dvm = 0.00005;
+        match self.viz {
+            VizType::Spectrum => {
+                let dm = 0.00005;
+                // let dvm = 0.00005;
 
-        let bin_width = 12.0;
-        let num_bins = (specto_rect.width() / bin_width) as usize;
-        let bin_width_frac = bin_width as f32 / specto_rect.width();
+                let bin_width = 12.0;
+                let num_bins = (viz_rect.width() / bin_width) as usize;
+                let bin_width_frac = bin_width as f32 / viz_rect.width();
 
-        let mut bins = vec![vec![]; num_bins + 1];
+                let mut bins = vec![vec![]; num_bins + 1];
 
-        if let Some(info) = &self.recording {
-            let info = info.lock().unwrap();
-            if let Some(spectrum) = &info.spectrum {
-                // println!("max: {:?}, len: {:?}", valmax, spectrum.data().len());
+                if let Some(info) = &self.recording {
+                    let info = info.lock().unwrap();
+                    if let Some(spectrum) = &info.spectrum {
+                        // println!("max: {:?}, len: {:?}", valmax, spectrum.data().len());
 
-                // for (fr, fr_val) in spectrum.data().iter() {
-                //     println!("{}Hz => {}", fr, fr_val)
-                // }
+                        // for (fr, fr_val) in spectrum.data().iter() {
+                        //     println!("{}Hz => {}", fr, fr_val)
+                        // }
 
-                let _line_points = spectrum
-                    .data()
-                    .iter()
-                    .map(|&(freq, val)| {
-                        // let y = lin_scale(val.val(), (0.0, valmax), (0.0, 1.0));
-                        let x = exp_scale(
-                            freq.val().log2(),
-                            (MIN_FREQ.log2(), MAX_FREQ.log2()),
-                            (0.0, 1.0),
-                        );
-
-                        let i = (x / bin_width_frac) as usize;
-                        bins[i].push(val.val());
-
-                        pos2(x, val.val())
-                    })
-                    .collect_vec();
-
-                let bins = bins
-                    .into_iter()
-                    .map(|bin| {
-                        if bin.len() == 0 {
-                            0.0
-                        } else {
-                            bin.iter().sum::<f32>() / bin.len() as f32
-                        }
-                    })
-                    .collect_vec();
-
-                let spectrum_val_max = bins.iter().cloned().reduce(f32::max).unwrap_or(0.0);
-                // println!("new max: {} cmp {}", spectrum_val_max, self.val_max);
-                let val_max = spectrum_val_max.max(self.val_max /*- dvm*/);
-                self.val_max = val_max;
-
-                if let Some(highest) = &self.mem_highest {
-                    let highest = resample_simple(highest, bins.len());
-                    self.mem_highest = Some(
-                        highest
+                        let _line_points = spectrum
+                            .data()
                             .iter()
-                            .zip(bins.iter())
-                            .map(|(&highest, &curr)| (highest - dm).max(curr))
-                            .collect_vec(),
-                    );
-                } else {
-                    self.mem_highest = Some(bins.clone());
-                }
+                            .map(|&(freq, val)| {
+                                // let y = lin_scale(val.val(), (0.0, valmax), (0.0, 1.0));
+                                let x = exp_scale(
+                                    freq.val().log2(),
+                                    (MIN_FREQ.log2(), MAX_FREQ.log2()),
+                                    (0.0, 1.0),
+                                );
 
-                if let Some(highest) = &self.mem_highest {
-                    // painter.add(Shape::line(
-                    //     highest
-                    //         .iter()
-                    //         .enumerate()
-                    //         .map(|(i, val)| {
-                    //             let x = xmin + i as f32 * bin_width;
-                    //             let y = ymax - (val / val_max) * h;
-                    //             pos2(x, y)
-                    //         })
-                    //         .collect_vec(),
-                    //     Stroke::new(1.0, hex_color!("#ffffff11")),
-                    // ));
+                                let i = (x / bin_width_frac) as usize;
+                                bins[i].push(val.val());
 
-                    for (i, val) in highest.iter().enumerate() {
-                        let x = xmin + i as f32 * bin_width;
-                        let y = ymax - (val / val_max) * h;
+                                pos2(x, val.val())
+                            })
+                            .collect_vec();
 
-                        painter.add(Shape::rect_filled(
-                            Rect {
-                                min: pos2(x, y),
-                                max: pos2(x + bin_width - 2.0, ymax),
-                            },
-                            0.0,
-                            hex_color!("#ffffff11"),
-                        ));
+                        let bins = bins
+                            .into_iter()
+                            .map(|bin| {
+                                if bin.len() == 0 {
+                                    0.0
+                                } else {
+                                    bin.iter().sum::<f32>() / bin.len() as f32
+                                }
+                            })
+                            .collect_vec();
+
+                        let spectrum_val_max = bins.iter().cloned().reduce(f32::max).unwrap_or(0.0);
+                        // println!("new max: {} cmp {}", spectrum_val_max, self.val_max);
+                        let val_max = spectrum_val_max.max(self.val_max /*- dvm*/);
+                        self.val_max = val_max;
+
+                        if let Some(highest) = &self.mem_highest {
+                            let highest = resample_simple(highest, bins.len());
+                            self.mem_highest = Some(
+                                highest
+                                    .iter()
+                                    .zip(bins.iter())
+                                    .map(|(&highest, &curr)| (highest - dm).max(curr))
+                                    .collect_vec(),
+                            );
+                        } else {
+                            self.mem_highest = Some(bins.clone());
+                        }
+
+                        if let Some(highest) = &self.mem_highest {
+                            // painter.add(Shape::line(
+                            //     highest
+                            //         .iter()
+                            //         .enumerate()
+                            //         .map(|(i, val)| {
+                            //             let x = xmin + i as f32 * bin_width;
+                            //             let y = ymax - (val / val_max) * h;
+                            //             pos2(x, y)
+                            //         })
+                            //         .collect_vec(),
+                            //     Stroke::new(1.0, hex_color!("#ffffff11")),
+                            // ));
+
+                            for (i, val) in highest.iter().enumerate() {
+                                let x = xmin + i as f32 * bin_width;
+                                let y = ymax - (val / val_max) * h;
+
+                                painter.add(Shape::rect_filled(
+                                    Rect {
+                                        min: pos2(x, y),
+                                        max: pos2(x + bin_width - 2.0, ymax),
+                                    },
+                                    0.0,
+                                    hex_color!("#ffffff11"),
+                                ));
+                            }
+                        }
+
+                        for (i, val) in bins.iter().enumerate() {
+                            let x = xmin + i as f32 * bin_width;
+                            let y = ymax - (val / val_max) * h;
+
+                            painter.add(Shape::rect_filled(
+                                Rect {
+                                    min: pos2(x, y),
+                                    max: pos2(x + bin_width - 2.0, ymax),
+                                },
+                                0.0,
+                                hex_color!("#ffffff"),
+                            ));
+                        }
                     }
                 }
+            }
+            VizType::Wave => {
+                if let Some(info) = &self.recording {
+                    let info = info.lock().unwrap();
 
-                for (i, val) in bins.iter().enumerate() {
-                    let x = xmin + i as f32 * bin_width;
-                    let y = ymax - (val / val_max) * h;
-
-                    painter.add(Shape::rect_filled(
-                        Rect {
-                            min: pos2(x, y),
-                            max: pos2(x + bin_width - 2.0, ymax),
-                        },
-                        0.0,
-                        hex_color!("#ffffff"),
+                    painter.add(Shape::line(
+                        info.latest_samples
+                            .iter()
+                            .enumerate()
+                            .map(|(i, &y)| {
+                                let x = xmin + w * (i as f32 / SAMPLE_BUFFER_SIZE as f32);
+                                let y = ymax - (h / 2.0) - y * (h / 2.0);
+                                pos2(x, y)
+                            })
+                            .collect_vec(),
+                        Stroke::new(1.0, hex_color!("#ffffff")),
                     ));
                 }
             }

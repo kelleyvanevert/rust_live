@@ -3,6 +3,7 @@ use egui::{epaint::*, *};
 pub struct MiniButton {
     pub text: WidgetText,
     pub selected: bool,
+    pub light: bool,
 }
 
 impl MiniButton {
@@ -10,7 +11,20 @@ impl MiniButton {
         Self {
             text: text.into(),
             selected,
+            light: false,
         }
+    }
+
+    #[allow(unused)]
+    pub fn light(mut self) -> Self {
+        self.light = true;
+        self
+    }
+
+    #[allow(unused)]
+    pub fn dark(mut self) -> Self {
+        self.light = false;
+        self
     }
 }
 
@@ -60,10 +74,18 @@ impl Widget for MiniButton {
             ui.painter().rect(
                 rect, //.expand(visuals.expansion)
                 4.0,
-                if self.selected {
-                    hex_color!("#00000066")
+                if self.light {
+                    if self.selected {
+                        hex_color!("#ffffff21")
+                    } else {
+                        hex_color!("#ffffff0a")
+                    }
                 } else {
-                    hex_color!("#00000022")
+                    if self.selected {
+                        hex_color!("#00000066")
+                    } else {
+                        hex_color!("#00000022")
+                    }
                 },
                 Stroke::NONE,
             );
@@ -76,10 +98,18 @@ impl Widget for MiniButton {
             text.paint_with_color_override(
                 ui.painter(),
                 text_pos,
-                if self.selected {
-                    hex_color!("#000000")
+                if self.light {
+                    if self.selected {
+                        hex_color!("#ffffff")
+                    } else {
+                        hex_color!("#ffffffaa")
+                    }
                 } else {
-                    hex_color!("#333333")
+                    if self.selected {
+                        hex_color!("#000000")
+                    } else {
+                        hex_color!("#333333")
+                    }
                 },
             );
         }
