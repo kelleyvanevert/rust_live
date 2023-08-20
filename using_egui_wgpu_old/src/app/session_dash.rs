@@ -13,12 +13,12 @@ use super::mini_button::MiniButton;
 
 const MIN_FREQ: f32 = 20.0;
 const MAX_FREQ: f32 = 20_000.0;
-const SAMPLE_BUFFER_SIZE: usize = 4096 * 2;
+const FFT_SAMPLE_BUFFER_SIZE: usize = 4096 * 2;
 
 struct RecordingInfo {
     quit: bool,
     sample_rate: u32,
-    latest_samples: [f32; SAMPLE_BUFFER_SIZE],
+    latest_samples: [f32; FFT_SAMPLE_BUFFER_SIZE],
     spectrum: Option<FrequencySpectrum>,
 }
 
@@ -31,6 +31,7 @@ enum VizType {
 pub struct SessionDash {
     recording: Option<Arc<Mutex<RecordingInfo>>>,
     viz: VizType,
+    i: usize,
     val_max: f32,
     mem_highest: Option<Vec<f32>>,
 }
@@ -40,6 +41,7 @@ impl SessionDash {
         Self {
             recording: None,
             viz: VizType::Spectrum,
+            i: 0,
             val_max: 0.005,
             mem_highest: None,
         }
@@ -57,7 +59,7 @@ impl SessionDash {
         let info = Arc::new(Mutex::new(RecordingInfo {
             quit: false,
             sample_rate: 0,
-            latest_samples: [0.0; SAMPLE_BUFFER_SIZE],
+            latest_samples: [0.0; FFT_SAMPLE_BUFFER_SIZE],
             spectrum: None,
         }));
 
@@ -244,21 +246,21 @@ impl Dash for SessionDash {
             },
         );
 
-        let mut viz_rect = rect.shrink2(vec2(40.0, 10.0));
-        viz_rect.min.y += 40.0;
-        let xmin = viz_rect.min.x;
-        // let xmax = viz_rect.max.x;
-        // let ymin = viz_rect.min.y;
-        let ymax = viz_rect.max.y;
-        let w = viz_rect.width();
-        let h = viz_rect.height();
-
-        // // debug
-        // ui.painter()
-        //     .rect_filled(viz_rect, 0.0, hex_color!("#cc000077"));
-
         match self.viz {
             VizType::Spectrum => {
+                let mut viz_rect = rect.shrink2(vec2(40.0, 10.0));
+                viz_rect.min.y += 40.0;
+                let xmin = viz_rect.min.x;
+                // let xmax = viz_rect.max.x;
+                // let ymin = viz_rect.min.y;
+                let ymax = viz_rect.max.y;
+                let w = viz_rect.width();
+                let h = viz_rect.height();
+
+                // // debug
+                // ui.painter()
+                //     .rect_filled(viz_rect, 0.0, hex_color!("#cc000077"));
+
                 let dm = 0.00005;
                 // let dvm = 0.00005;
 
@@ -370,20 +372,36 @@ impl Dash for SessionDash {
                 }
             }
             VizType::Wave => {
+                self.i += 1;
+
+                let mut viz_rect = rect.shrink2(vec2(0.0, 10.0));
+                viz_rect.min.y += 40.0;
+                let xmin = viz_rect.min.x;
+                // let xmax = viz_rect.max.x;
+                // let ymin = viz_rect.min.y;
+                let ymax = viz_rect.max.y;
+                let w = viz_rect.width();
+                let h = viz_rect.height();
+
+                // // debug
+                // ui.painter()
+                //     .rect_filled(viz_rect, 0.0, hex_color!("#cc000077"));
+
                 if let Some(info) = &self.recording {
                     let info = info.lock().unwrap();
+                    let n = FFT_SAMPLE_BUFFER_SIZE / 16;
 
                     painter.add(Shape::line(
-                        info.latest_samples
+                        info.latest_samples[(info.latest_samples.len() - n)..]
                             .iter()
                             .enumerate()
                             .map(|(i, &y)| {
-                                let x = xmin + w * (i as f32 / SAMPLE_BUFFER_SIZE as f32);
+                                let x = xmin + w * (i as f32 / n as f32);
                                 let y = ymax - (h / 2.0) - y * (h / 2.0);
                                 pos2(x, y)
                             })
                             .collect_vec(),
-                        Stroke::new(1.0, hex_color!("#ffffff")),
+                        Stroke::new(2.0, hex_color!("#ffffff")),
                     ));
                 }
             }
