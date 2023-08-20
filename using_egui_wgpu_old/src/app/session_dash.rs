@@ -1,7 +1,7 @@
 use std::sync::{Arc, Mutex};
 
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use cpal::{BufferSize, StreamConfig};
+use cpal::StreamConfig;
 use egui::*;
 use itertools::Itertools;
 use spectrum_analyzer::scaling::divide_by_N;
@@ -12,21 +12,29 @@ use super::dash::{Dash, DASH_HEIGHT};
 
 const MIN_FREQ: f32 = 20.0;
 const MAX_FREQ: f32 = 20_000.0;
+const FFT_SAMPLE_BUFFER_SIZE: usize = 4096 * 2;
 
 struct RecordingInfo {
     quit: bool,
     sample_rate: u32,
-    latest_samples: Vec<f32>,
+    latest_samples: [f32; FFT_SAMPLE_BUFFER_SIZE],
     spectrum: Option<FrequencySpectrum>,
 }
 
 pub struct SessionDash {
     recording: Option<Arc<Mutex<RecordingInfo>>>,
+
+    val_max: f32,
+    mem_highest: Option<Vec<f32>>,
 }
 
 impl SessionDash {
     pub fn new() -> Self {
-        Self { recording: None }
+        Self {
+            recording: None,
+            val_max: 0.005,
+            mem_highest: None,
+        }
     }
 
     fn stop_recording(&mut self) {
@@ -41,7 +49,7 @@ impl SessionDash {
         let info = Arc::new(Mutex::new(RecordingInfo {
             quit: false,
             sample_rate: 0,
-            latest_samples: vec![],
+            latest_samples: [0.0; FFT_SAMPLE_BUFFER_SIZE],
             spectrum: None,
         }));
 
@@ -78,42 +86,46 @@ impl SessionDash {
                 let mut info = info.lock().unwrap();
                 // let latest_samples: &mut Vec<f32> = info.latest_samples.as_mut();
 
-                info.latest_samples = input
-                    .chunks(channels as _)
-                    .map(|frame| {
-                        //
-                        frame[0].to_sample::<f32>()
-                    })
-                    .collect::<Vec<_>>();
+                let n = input.len() / channels as usize;
 
-                if info.latest_samples.len() > 0 {
-                    // apply hann window for smoothing; length must be a power of 2 for the FFT
-                    // 2048 is a good starting point with 44100 kHz
-                    let hann_window = hann_window(&info.latest_samples[0..]);
-                    // calc spectrum
-                    let spectrum_hann_window = samples_fft_to_spectrum(
-                        // (windowed) samples
-                        &hann_window,
-                        // sampling rate
-                        info.sample_rate,
-                        // optional frequency limit: e.g. only interested in frequencies 50 <= f <= 150?
-                        FrequencyLimit::Range(MIN_FREQ, MAX_FREQ),
-                        // optional scale
-                        Some(&divide_by_N),
-                    )
-                    .unwrap();
+                info.latest_samples.rotate_left(n);
 
-                    info.spectrum = Some(spectrum_hann_window);
-                } else {
-                    info.spectrum = None;
+                let i0 = info.latest_samples.len() - n;
+                for (i, frame) in input.chunks(channels as _).enumerate() {
+                    info.latest_samples[i0 + i] = frame[0].to_sample::<f32>();
                 }
+
+                // info.latest_samples = input
+                //     .chunks(channels as _)
+                //     .map(|frame| {
+                //         //
+                //         frame[0].to_sample::<f32>()
+                //     })
+                //     .collect::<Vec<_>>();
+
+                // apply hann window for smoothing; length must be a power of 2 for the FFT
+                // 2048 is a good starting point with 44100 kHz
+                let hann_window = hann_window(&info.latest_samples[0..]);
+                // calc spectrum
+                let spectrum_hann_window = samples_fft_to_spectrum(
+                    // (windowed) samples
+                    &hann_window,
+                    // sampling rate
+                    info.sample_rate,
+                    // optional frequency limit: e.g. only interested in frequencies 50 <= f <= 150?
+                    FrequencyLimit::Range(MIN_FREQ, MAX_FREQ),
+                    // optional scale
+                    Some(&divide_by_N),
+                )
+                .unwrap();
+
+                info.spectrum = Some(spectrum_hann_window);
             }
 
             let info_2 = info.clone();
 
-            let mut stream_config: StreamConfig = config.clone().into();
-
-            stream_config.buffer_size = BufferSize::Fixed(2048);
+            let stream_config: StreamConfig = config.clone().into();
+            // stream_config.buffer_size = BufferSize::Fixed(1024);
 
             let stream = match config.sample_format() {
                 cpal::SampleFormat::I8 => device
@@ -208,58 +220,115 @@ impl Dash for SessionDash {
         );
 
         let mut specto_rect = rect.shrink2(vec2(40.0, 10.0));
-        specto_rect.min.y += 50.0;
+        specto_rect.min.y += 40.0;
         let xmin = specto_rect.min.x;
-        let xmax = specto_rect.max.x;
-        let ymin = specto_rect.min.y;
+        // let xmax = specto_rect.max.x;
+        // let ymin = specto_rect.min.y;
         let ymax = specto_rect.max.y;
+        // let w = specto_rect.width();
+        let h = specto_rect.height();
+
+        // // debug
+        // ui.painter()
+        //     .rect_filled(specto_rect, 0.0, hex_color!("#cc000077"));
+
+        let dm = 0.00005;
+        // let dvm = 0.00005;
 
         let bin_width = 12.0;
         let num_bins = (specto_rect.width() / bin_width) as usize;
+        let bin_width_frac = bin_width as f32 / specto_rect.width();
 
         let mut bins = vec![vec![]; num_bins + 1];
 
         if let Some(info) = &self.recording {
             let info = info.lock().unwrap();
             if let Some(spectrum) = &info.spectrum {
-                let valmax: f32 = spectrum.max().1.val().max(0.01);
-
-                println!("max: {:?}, len: {:?}", valmax, spectrum.data().len());
+                // println!("max: {:?}, len: {:?}", valmax, spectrum.data().len());
 
                 // for (fr, fr_val) in spectrum.data().iter() {
                 //     println!("{}Hz => {}", fr, fr_val)
                 // }
 
-                let line_points = spectrum
+                let _line_points = spectrum
                     .data()
                     .iter()
                     .map(|&(freq, val)| {
-                        let y = lin_scale(val.val(), (0.0, valmax), (ymax, ymin));
+                        // let y = lin_scale(val.val(), (0.0, valmax), (0.0, 1.0));
                         let x = exp_scale(
                             freq.val().log2(),
                             (MIN_FREQ.log2(), MAX_FREQ.log2()),
-                            (xmin, xmax),
+                            (0.0, 1.0),
                         );
 
-                        let i = ((x - xmin) / bin_width) as usize;
-                        bins[i].push(y);
+                        let i = (x / bin_width_frac) as usize;
+                        bins[i].push(val.val());
 
-                        pos2(x, y)
+                        pos2(x, val.val())
                     })
                     .collect_vec();
 
-                // painter.add(Shape::line(
-                //     line_points,
-                //     Stroke::new(2.0, hex_color!("#ffffff")),
-                // ));
+                let bins = bins
+                    .into_iter()
+                    .map(|bin| {
+                        if bin.len() == 0 {
+                            0.0
+                        } else {
+                            bin.iter().sum::<f32>() / bin.len() as f32
+                        }
+                    })
+                    .collect_vec();
 
-                for (i, bin) in bins.iter().enumerate() {
+                let spectrum_val_max = bins.iter().cloned().reduce(f32::max).unwrap_or(0.0);
+                // println!("new max: {} cmp {}", spectrum_val_max, self.val_max);
+                let val_max = spectrum_val_max.max(self.val_max /*- dvm*/);
+                self.val_max = val_max;
+
+                if let Some(highest) = &self.mem_highest {
+                    let highest = resample_simple(highest, bins.len());
+                    self.mem_highest = Some(
+                        highest
+                            .iter()
+                            .zip(bins.iter())
+                            .map(|(&highest, &curr)| (highest - dm).max(curr))
+                            .collect_vec(),
+                    );
+                } else {
+                    self.mem_highest = Some(bins.clone());
+                }
+
+                if let Some(highest) = &self.mem_highest {
+                    // painter.add(Shape::line(
+                    //     highest
+                    //         .iter()
+                    //         .enumerate()
+                    //         .map(|(i, val)| {
+                    //             let x = xmin + i as f32 * bin_width;
+                    //             let y = ymax - (val / val_max) * h;
+                    //             pos2(x, y)
+                    //         })
+                    //         .collect_vec(),
+                    //     Stroke::new(1.0, hex_color!("#ffffff11")),
+                    // ));
+
+                    for (i, val) in highest.iter().enumerate() {
+                        let x = xmin + i as f32 * bin_width;
+                        let y = ymax - (val / val_max) * h;
+
+                        painter.add(Shape::rect_filled(
+                            Rect {
+                                min: pos2(x, y),
+                                max: pos2(x + bin_width - 2.0, ymax),
+                            },
+                            0.0,
+                            hex_color!("#ffffff11"),
+                        ));
+                    }
+                }
+
+                for (i, val) in bins.iter().enumerate() {
                     let x = xmin + i as f32 * bin_width;
-                    let y = if bin.len() == 0 {
-                        ymax
-                    } else {
-                        bin.iter().sum::<f32>() / bin.len() as f32
-                    };
+                    let y = ymax - (val / val_max) * h;
 
                     painter.add(Shape::rect_filled(
                         Rect {
@@ -287,10 +356,65 @@ impl Dash for SessionDash {
     }
 }
 
+#[allow(unused)]
 fn lin_scale(x: f32, domain: (f32, f32), range: (f32, f32)) -> f32 {
     (x - domain.0) / (domain.1 - domain.0) * (range.1 - range.0) + range.0
 }
 
 fn exp_scale(x: f32, domain: (f32, f32), range: (f32, f32)) -> f32 {
     (x - domain.0) / (domain.1 - domain.0) * (range.1 - range.0) + range.0
+}
+
+fn resample_simple(source: &Vec<f32>, dest_len: usize) -> Vec<f32> {
+    if source.len() == dest_len {
+        return source.clone();
+    }
+
+    let ratio = source.len() as f32 / dest_len as f32;
+
+    let mut output = vec![0.0; dest_len + 1];
+
+    for i in 0..source.len() {
+        let a = i as f32 / ratio;
+        let b = (i + 1) as f32 / ratio;
+        if a as usize == b as usize {
+            output[a as usize] += source[i] / ratio;
+        } else {
+            output[a as usize] += source[i] * (b.floor() - a);
+            output[b as usize] += source[i] * (b - b.floor());
+        }
+    }
+
+    // the output is padded by 1 so that the flooring + working with `b` is easier
+    output.pop();
+
+    output
+}
+
+#[test]
+fn test_resample_simple() {
+    use float_cmp::*;
+
+    fn assert_vec_approx_eq(a: Vec<f32>, b: Vec<f32>) {
+        assert_eq!(a.len(), b.len());
+        for i in 0..a.len() {
+            assert_approx_eq!(f32, a[i], b[i]);
+        }
+    }
+
+    let res = resample_simple(&vec![1.0; 11], 3);
+    assert_vec_approx_eq(res, vec![1.0; 3]);
+
+    let res = resample_simple(
+        &vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0],
+        3,
+    );
+    assert_vec_approx_eq(
+        res,
+        vec![
+            5.0 / 3.6666666,
+            18.333333333 / 3.6666666,
+            31.66666666 / 3.6666666,
+        ],
+    );
 }
