@@ -1,5 +1,5 @@
 [package]
-name = "audio_lang"
+name = "test_audio_runtime"
 version = "0.1.0"
 edition = "2021"
 
