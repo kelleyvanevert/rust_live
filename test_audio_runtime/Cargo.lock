@@ -224,27 +224,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "79d6dc922a2792b006573f60b2648076355daeae5ce9cb59507e5908c9625d31"
 
 [[package]]
-name = "audio_lang"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "bytemuck",
- "cgmath",
- "color-hex",
- "cpal",
- "env_logger",
- "epaint",
- "fast-math",
- "itertools",
- "palette",
- "pollster",
- "rfd",
- "symphonia",
- "wgpu",
- "winit",
-]
-
-[[package]]
 name = "autocfg"
 version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2372,6 +2351,27 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "be55cf8942feac5c765c2c993422806843c9a9a45d4d5c407ad6dd2ea95eb9b6"
 dependencies = [
  "winapi-util",
+]
+
+[[package]]
+name = "test_audio_runtime"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "bytemuck",
+ "cgmath",
+ "color-hex",
+ "cpal",
+ "env_logger",
+ "epaint",
+ "fast-math",
+ "itertools",
+ "palette",
+ "pollster",
+ "rfd",
+ "symphonia",
+ "wgpu",
+ "winit",
 ]
 
 [[package]]

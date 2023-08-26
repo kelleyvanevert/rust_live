@@ -1,0 +1,8 @@
+[package]
+name = "live_language"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+emath = "0.22.0"
+nom = "7.1.3"
