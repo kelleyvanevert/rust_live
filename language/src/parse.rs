@@ -1268,4 +1268,12 @@ rust-like expression vs statement handling
         6 + x
     };
 
+===
+
+let bpm = 120;
+let beat = trigger(60/bpm); // like square, except 0..1 instead of -1..1
+let beat = max(square(60/bpm), 0);
+
+pause sound @ beat;
+
 */
