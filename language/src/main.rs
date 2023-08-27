@@ -1,6 +1,14 @@
-use crate::parse::parse_document;
+use ast::Document;
+use check::check_document;
+use parse::parse_document;
 
-pub mod parse;
+mod ast;
+mod check;
+mod parse;
+
+pub fn parse_and_check(code: &str) -> Option<Document> {
+    parse_document(code).map(check_document)
+}
 
 fn main() {
     println!("{:?}", parse_document("play sine(440hz);"));
