@@ -120,6 +120,10 @@ play house;",
         let (response, painter) =
             ui.allocate_painter(vec2(f32::INFINITY, f32::INFINITY), Sense::click_and_drag());
 
+        if response.hovered() {
+            ui.ctx().set_cursor_icon(CursorIcon::Text);
+        }
+
         let rect = response.rect;
 
         let padding = vec2(20.0, 16.0);
