@@ -4,6 +4,7 @@ use std::time::Duration;
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use cpal::{BufferSize, FromSample, SampleRate, SizedSample, StreamConfig};
 
+use crate::modulate::Modulation;
 use crate::osc::*;
 
 pub fn music() {
@@ -30,19 +31,19 @@ where
     o1.map("v".into(), "volume".into());
     o1.map("sq".into(), "squareness".into());
     o1.map("a".into(), "frequency".into());
-    o1.apply("frequency".into(), 220.0);
+    // o1.apply("frequency".into(), 220.0);
 
     let mut o2 = Osc::default();
     o2.map("v".into(), "volume".into());
     o2.map("sq".into(), "squareness".into());
     o2.map("b".into(), "frequency".into());
-    o2.apply("frequency".into(), 4.0 * 440.0);
+    // o2.apply("frequency".into(), 4.0 * 440.0);
 
     let mut o3 = Osc::default();
     o3.map("v".into(), "volume".into());
     o3.map("sq".into(), "squareness".into());
     o3.map("c".into(), "frequency".into());
-    o3.apply("frequency".into(), 4.0 * 440.0);
+    // o3.apply("frequency".into(), 4.0 * 440.0);
 
     let mut kick = Sample::new("../editor/res/samples/Kick 90s 1.wav").delay(1.0);
     kick.apply("repeat".into(), 0.0);
@@ -70,30 +71,63 @@ where
 
     let _ = frontend.send(("v".into(), 0.1));
 
+    let bt = 0.3;
+
+    let mut modulate_a = Modulation::new("a".into(), 220.0);
+    let mut modulate_b = Modulation::new("b".into(), 4.0 * 440.0);
+    let mut modulate_c = Modulation::new("c".into(), 4.0 * 440.0);
+    let mut modulate_sq = Modulation::new("sq".into(), 0.3);
+
+    modulate_a.schedule_transition(bt * 5.0, bt, 330.0);
+    modulate_b.schedule_transition(bt * 5.0, bt, 3.0 * 440.0 * (3.0 / 5.0));
+    modulate_c.schedule_transition(bt * 5.0, bt, 3.0 * 440.0 * (4.0 / 5.0));
+    // modulate_sq.schedule_transition(bt * 5.0, bt, 1.0);
+
+    modulate_a.schedule_transition(bt * 10.0, bt, 345.0 / 1.5);
+    modulate_b.schedule_transition(bt * 10.0, bt, 3.0 * 440.0 * (3.2 / 3.0) * (2. / 3.));
+    modulate_c.schedule_transition(bt * 10.0, bt, 3.0 * 440.0 * (3.2 / 3.0));
+    // modulate_sq.schedule_transition(bt * 10.0, bt, 1.0);
+
+    modulate_a.schedule_transition(bt * 15.0, bt, 440.0);
+    modulate_b.schedule_transition(bt * 15.0, bt, 3.0 * 440.0 * (4.5 / 5.0));
+    modulate_c.schedule_transition(bt * 15.0, bt, 3.0 * 440.0 * (3.0 / 5.0) * 1.75);
+    // modulate_sq.schedule_transition(bt * 15.0, bt, 1.0);
+
+    modulate_a.schedule_transition(bt * 20.0, bt, 220.0);
+    modulate_b.schedule_transition(bt * 20.0, bt, 4.0 * 440.0);
+    modulate_c.schedule_transition(bt * 20.0, bt, 4.0 * 440.0);
+    modulate_sq.schedule_transition(bt * 20.0, bt, 0.8);
+
+    modulate_a.schedule_transition(bt * 25.0, bt, 330.0);
+    modulate_b.schedule_transition(bt * 25.0, bt, 3.0 * 440.0 * (3.0 / 5.0));
+    modulate_c.schedule_transition(bt * 25.0, bt, 3.0 * 440.0 * (4.0 / 5.0));
+    // modulate_sq.schedule_transition(bt * 20.0, bt, 0.8);
+
+    modulate_a.schedule_transition(bt * 30.0, bt, 345.0 / 1.5);
+    modulate_b.schedule_transition(bt * 30.0, bt, 3.0 * 440.0 * (3.2 / 3.0) * (2. / 3.));
+    modulate_c.schedule_transition(bt * 30.0, bt, 3.0 * 440.0 * (3.2 / 3.0));
+    // modulate_sq.schedule_transition(bt * 20.0, bt, 0.8);
+
+    modulate_a.schedule_transition(bt * 35.0, bt, 440.0 * 0.5);
+    modulate_b.schedule_transition(bt * 35.0, bt, 3.0 * 440.0 * (4.5 / 5.0) * 0.5);
+    modulate_c.schedule_transition(bt * 35.0, bt, 3.0 * 440.0 * (3.0 / 5.0) * 1.75 * 0.5);
+    // modulate_sq.schedule_transition(bt * 20.0, bt, 0.8);
+
     stream.play()?;
 
-    let bt = 500;
+    let mut time = 0.0;
 
-    sleep(Duration::from_millis(bt * 5));
+    loop {
+        time += 0.001;
+        let _ = frontend.send(modulate_a.get_message(time));
+        let _ = frontend.send(modulate_b.get_message(time));
+        let _ = frontend.send(modulate_c.get_message(time));
+        let _ = frontend.send(modulate_sq.get_message(time));
 
-    // for t in 0..bt {
-    let _ = frontend.send(("a".into(), 330.0));
-    let _ = frontend.send(("b".into(), 3.0 * 440.0 * (3.0 / 5.0)));
-    let _ = frontend.send(("c".into(), 3.0 * 440.0 * (4.0 / 5.0)));
-    let _ = frontend.send(("sq".into(), 1.0));
+        sleep(Duration::MILLISECOND);
+    }
 
-    // let _ = frontend.send(lerp_params(
-    //     ease_cubic_in_out(t as f32 / bt as f32),
-    //     a[j],
-    //     b[j],
-    // ));
-
-    // sleep(Duration::MILLISECOND);
-    // }
-
-    sleep(Duration::from_millis(bt * 4));
-
-    Ok(())
+    // Ok(())
 }
 
 fn write_data<T>(output: &mut [T], channels: usize, next_sample: &mut dyn FnMut() -> f32)
@@ -104,7 +138,7 @@ where
         let s = next_sample() as f64;
         let s = T::from_sample(s);
 
-        for (channel, sample) in frame.iter_mut().enumerate() {
+        for (_, sample) in frame.iter_mut().enumerate() {
             *sample = s;
         }
     }

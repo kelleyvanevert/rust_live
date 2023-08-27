@@ -14,7 +14,8 @@ pub trait AudioNode {
     fn named_parameters(&self) -> Vec<String>;
     fn map(&mut self, name: String, parameter: String);
     fn apply(&mut self, param: String, value: f32);
-    fn get_next_sample(&mut self) -> f32;
+    fn get_next_sample(&self) -> f32;
+    fn tick(&mut self);
 }
 
 pub struct Osc {
@@ -69,13 +70,15 @@ impl AudioNode for Osc {
         }
     }
 
-    fn get_next_sample(&mut self) -> f32 {
+    fn tick(&mut self) {
+        self.rad += self.frequency * (TAU / SAMPLE_RATE as f32);
+        self.rad %= TAU;
+    }
+
+    fn get_next_sample(&self) -> f32 {
         // while let Ok(params) = self.front.1.try_recv() {
         //     self.apply(params);
         // }
-
-        self.rad += self.frequency * (TAU / SAMPLE_RATE as f32);
-        self.rad %= TAU;
 
         // as a sine
         let sin = self.rad.sin();
@@ -130,7 +133,11 @@ impl AudioNode for Sine {
         self.osc.apply(param, value);
     }
 
-    fn get_next_sample(&mut self) -> f32 {
+    fn tick(&mut self) {
+        self.osc.tick();
+    }
+
+    fn get_next_sample(&self) -> f32 {
         self.osc.get_next_sample()
     }
 }
@@ -173,8 +180,14 @@ impl AudioNode for Mix {
         }
     }
 
-    fn get_next_sample(&mut self) -> f32 {
-        self.inputs.iter_mut().map(|n| n.get_next_sample()).sum()
+    fn tick(&mut self) {
+        for input in &mut self.inputs {
+            input.tick();
+        }
+    }
+
+    fn get_next_sample(&self) -> f32 {
+        self.inputs.iter().map(|n| n.get_next_sample()).sum()
     }
 }
 
@@ -240,15 +253,19 @@ impl AudioNode for Sample {
         }
     }
 
-    fn get_next_sample(&mut self) -> f32 {
+    fn tick(&mut self) {
         if self.repeat && self.index >= self.delay && self.index - self.delay >= self.samples.len()
         {
             self.index = self.delay;
         }
 
         // `self.start`-based
-        let i = self.index;
         self.index += 1;
+    }
+
+    fn get_next_sample(&self) -> f32 {
+        // `self.start`-based
+        let i = self.index;
 
         if i < self.delay || i - self.delay >= self.samples.len() {
             return 0.0;
@@ -282,6 +299,8 @@ impl Wrapper {
     }
 
     pub fn get_next_sample(&mut self) -> f32 {
+        self.node.tick();
+
         while let Ok((name, value)) = self.frontend.1.try_recv() {
             self.node.apply(name, value);
         }

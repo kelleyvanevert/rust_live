@@ -4,6 +4,7 @@
 
 use music::music;
 
+mod modulate;
 mod music;
 mod osc;
 mod read_audio_file;
