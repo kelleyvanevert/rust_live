@@ -1,5 +1,11 @@
 use core::f64;
-use std::f64::consts::{PI, TAU};
+use std::{
+    cell::RefCell,
+    f64::consts::{PI, TAU},
+    ops::Range,
+    sync::Arc,
+    vec,
+};
 
 use nom::{
     branch::*,
@@ -11,11 +17,30 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, Parser,
 };
-use nom_locate::LocatedSpan;
 
 use crate::ast::*;
 
-type Span<'a> = LocatedSpan<&'a str>;
+/// Error containing a text span and an error message to display.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ParseError(pub Range<usize>, pub String);
+
+/// Carried around in the `LocatedSpan::extra` field in
+/// between `nom` parsers.
+#[derive(Clone, Debug)]
+pub struct ParseState(Arc<RefCell<Vec<ParseError>>>);
+
+impl ParseState {
+    /// Pushes an error onto the errors stack from within a `nom`
+    /// parser combinator while still allowing parsing to continue.
+    #[allow(unused)]
+    pub fn report_error(&self, error: ParseError) {
+        self.0.borrow_mut().push(error);
+    }
+}
+
+pub type Span<'a> = nom_locate::LocatedSpan<&'a str, ParseState>;
+
+pub type ParseResult<'a, T> = nom::IResult<Span<'a>, T>;
 
 #[allow(unused)]
 fn op(input: &str) -> IResult<&str, Op> {
@@ -28,7 +53,7 @@ fn op(input: &str) -> IResult<&str, Op> {
     .parse(input)
 }
 
-fn boolean(input: Span) -> IResult<Span, Primitive> {
+fn boolean(input: Span) -> ParseResult<Primitive> {
     alt((
         value(Primitive::Bool(true), tag("true")),
         value(Primitive::Bool(false), tag("false")),
@@ -36,7 +61,7 @@ fn boolean(input: Span) -> IResult<Span, Primitive> {
     .parse(input)
 }
 
-fn math_constants(input: Span) -> IResult<Span, Primitive> {
+fn math_constants(input: Span) -> ParseResult<Primitive> {
     alt((
         value(Primitive::Float(PI), tag("pi")),
         value(Primitive::Float(TAU), tag("tau")),
@@ -44,7 +69,7 @@ fn math_constants(input: Span) -> IResult<Span, Primitive> {
     .parse(input)
 }
 
-fn integer(input: Span) -> IResult<Span, i64> {
+fn integer(input: Span) -> ParseResult<i64> {
     map(recognize(many1(alt((digit1::<Span, _>, tag("_"))))), |s| {
         s.chars()
             .filter(|&c| c != '_')
@@ -56,7 +81,7 @@ fn integer(input: Span) -> IResult<Span, i64> {
 }
 
 // not amazingly written, but, well, works for now ;)
-fn numeric_primitive(input: Span) -> IResult<Span, Primitive> {
+fn numeric_primitive(input: Span) -> ParseResult<Primitive> {
     map(
         tuple((
             opt(alt((char::<Span, error::Error<Span>>('+'), char('-')))),
@@ -95,11 +120,11 @@ fn numeric_primitive(input: Span) -> IResult<Span, Primitive> {
     .parse(input)
 }
 
-fn parse_str(input: Span) -> IResult<Span, String> {
+fn parse_str(input: Span) -> ParseResult<String> {
     escaped_transform(alphanumeric1, '\\', one_of("\"\n\\")).parse(input)
 }
 
-fn string(input: Span) -> IResult<Span, Primitive> {
+fn string(input: Span) -> ParseResult<Primitive> {
     map(
         preceded(char('\"'), cut(terminated(parse_str, char('\"')))),
         Primitive::Str,
@@ -107,11 +132,11 @@ fn string(input: Span) -> IResult<Span, Primitive> {
     .parse(input)
 }
 
-pub fn parse_primitive(input: Span) -> IResult<Span, Primitive> {
+pub fn parse_primitive(input: Span) -> ParseResult<Primitive> {
     alt((boolean, numeric_primitive, math_constants, string)).parse(input)
 }
 
-fn parenthesized_expr(i: Span) -> IResult<Span, Expr> {
+fn parenthesized_expr(i: Span) -> ParseResult<Expr> {
     delimited(
         tag("("),
         map(parse_expression, |e| Expr::Paren(Box::new(e))),
@@ -120,7 +145,7 @@ fn parenthesized_expr(i: Span) -> IResult<Span, Expr> {
     .parse(i)
 }
 
-fn parse_block(input: Span) -> IResult<Span, Block> {
+fn parse_block(input: Span) -> ParseResult<Block> {
     delimited(
         tag("{"),
         map(
@@ -139,7 +164,7 @@ fn parse_block(input: Span) -> IResult<Span, Block> {
     .parse(input)
 }
 
-fn access_or_call(input: Span) -> IResult<Span, Expr> {
+fn access_or_call(input: Span) -> ParseResult<Expr> {
     map(
         pair(
             identifier,
@@ -163,7 +188,7 @@ fn access_or_call(input: Span) -> IResult<Span, Expr> {
     .parse(input)
 }
 
-fn factor(i: Span) -> IResult<Span, Expr> {
+fn factor(i: Span) -> ParseResult<Expr> {
     delimited(
         multispace0,
         alt((
@@ -192,7 +217,7 @@ fn fold_exprs(initial: Expr, remainder: Vec<(Op, Expr)>) -> Expr {
     })
 }
 
-fn term(i: Span) -> IResult<Span, Expr> {
+fn term(i: Span) -> ParseResult<Expr> {
     let (i, initial) = factor(i)?;
     let (i, remainder) = many0(alt((
         |i| {
@@ -209,7 +234,7 @@ fn term(i: Span) -> IResult<Span, Expr> {
     Ok((i, fold_exprs(initial, remainder)))
 }
 
-pub fn parse_expression(i: Span) -> IResult<Span, Expr> {
+pub fn parse_expression(i: Span) -> ParseResult<Expr> {
     let (i, initial) = term(i)?;
     let (i, remainder) = many0(alt((
         |i| {
@@ -226,7 +251,7 @@ pub fn parse_expression(i: Span) -> IResult<Span, Expr> {
     Ok((i, fold_exprs(initial, remainder)))
 }
 
-fn identifier(input: Span) -> IResult<Span, Identifier> {
+fn identifier(input: Span) -> ParseResult<Identifier> {
     map(
         recognize(tuple((
             alt((alpha1, tag("_"))),
@@ -237,7 +262,7 @@ fn identifier(input: Span) -> IResult<Span, Identifier> {
     .parse(input)
 }
 
-fn parse_param(input: Span) -> IResult<Span, Param> {
+fn parse_param(input: Span) -> ParseResult<Param> {
     map(
         pair(opt(terminated(identifier, multispace1)), identifier),
         |(ty, name)| Param { ty, name },
@@ -245,7 +270,7 @@ fn parse_param(input: Span) -> IResult<Span, Param> {
     .parse(input)
 }
 
-fn parse_anonymous_function(input: Span) -> IResult<Span, AnonymousFn> {
+fn parse_anonymous_function(input: Span) -> ParseResult<AnonymousFn> {
     map(
         preceded(
             pair(tag("|"), space0),
@@ -265,7 +290,7 @@ fn parse_anonymous_function(input: Span) -> IResult<Span, AnonymousFn> {
     .parse(input)
 }
 
-fn parse_function_declaration(input: Span) -> IResult<Span, FnDecl> {
+fn parse_function_declaration(input: Span) -> ParseResult<FnDecl> {
     map(
         preceded(
             pair(tag("fn"), space1),
@@ -292,7 +317,7 @@ fn parse_function_declaration(input: Span) -> IResult<Span, FnDecl> {
     .parse(input)
 }
 
-fn parse_item(input: Span) -> IResult<Span, Item> {
+fn parse_item(input: Span) -> ParseResult<Item> {
     alt((
         map(parse_function_declaration, |fndecl| {
             Item::FnDecl(Box::new(fndecl))
@@ -302,7 +327,7 @@ fn parse_item(input: Span) -> IResult<Span, Item> {
     .parse(input)
 }
 
-pub fn parse_statement(input: Span) -> IResult<Span, Stmt> {
+pub fn parse_statement(input: Span) -> ParseResult<Stmt> {
     alt((
         map(tag(";"), |_| Stmt::Skip),
         map(
@@ -341,25 +366,49 @@ pub fn parse_statement(input: Span) -> IResult<Span, Stmt> {
     .parse(input)
 }
 
-pub fn parse_document(input: Span) -> Option<Document> {
-    terminated(
+pub fn parse_document<'a>(input: impl Into<&'a str>) -> (Document, Vec<ParseError>) {
+    let errors = Arc::new(RefCell::new(vec![]));
+    let span = Span::new_extra(input.into(), ParseState(errors.clone()));
+
+    let (_, document) = terminated(
         map(
             tuple((multispace0, many0(terminated(parse_statement, multispace0)))),
             |(_, stmts)| Document { stmts },
         ),
         eof,
     )
-    .parse(input)
+    .parse(span)
     .ok()
-    .map(|p| p.1)
+    .expect("document parser is not allowed to fail");
+
+    (document, errors.take())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn test_parse<'a, R, E>(
+    fn parse<'a, R, E>(
         mut parser: impl Parser<Span<'a>, R, E>,
+        str: &'a str,
+    ) -> Option<(&'a str, R, Vec<ParseError>)>
+    where
+        E: std::fmt::Debug,
+    {
+        // Store our error stack external to our `nom` parser here. It
+        // is wrapped in a `RefCell` so parser functions down the line
+        // can remotely push errors onto it as they run.
+        let errors = Arc::new(RefCell::new(vec![]));
+        let span = Span::new_extra(str, ParseState(errors.clone()));
+
+        parser
+            .parse(span)
+            .ok()
+            .map(|(span, result)| (*span.fragment(), result, errors.take()))
+    }
+
+    fn test_parse<'a, R, E>(
+        parser: impl Parser<Span<'a>, R, E>,
         input: &'a str,
         rem: &'a str,
         res: R,
@@ -367,12 +416,7 @@ mod tests {
         R: std::fmt::Debug + PartialEq,
         E: std::fmt::Debug + PartialEq,
     {
-        assert_eq!(
-            parser
-                .parse(input.into())
-                .map(|(span, res)| (span.to_string(), res)),
-            Ok((rem.to_string(), res))
-        );
+        assert_eq!(parse(parser, input), Some((rem, res, vec![])));
     }
 
     fn debug<T: std::fmt::Debug>(x: T) -> String {
@@ -381,43 +425,57 @@ mod tests {
 
     #[test]
     fn test_primitives() {
-        test_parse(parse_primitive, "true!", "!", Primitive::Bool(true));
-        test_parse(parse_primitive, "3.14!", "!", Primitive::Float(3.14));
-        test_parse(
-            parse_primitive,
-            "440hz!",
-            "!",
-            Primitive::Quantity((440.0, "hz".into())),
+        assert_eq!(
+            parse(parse_primitive, "true!"),
+            Some(("!", Primitive::Bool(true), vec![]))
         );
-        test_parse(
-            parse_primitive,
-            "40 khz!",
-            "!",
-            Primitive::Quantity((40.0, "khz".into())),
+        assert_eq!(
+            parse(parse_primitive, "3.14!"),
+            Some(("!", Primitive::Float(3.14), vec![]))
         );
-        test_parse(
-            parse_primitive,
-            "-40 khz!",
-            "!",
-            Primitive::Quantity((-40.0, "khz".into())),
+        assert_eq!(
+            parse(parse_primitive, "440hz!"),
+            Some(("!", Primitive::Quantity((440.0, "hz".into())), vec![]))
         );
-        test_parse(parse_primitive, "40!", "!", Primitive::Int(40));
-        test_parse(parse_primitive, "-0!", "!", Primitive::Int(0));
-        test_parse(parse_primitive, "-0.0!", "!", Primitive::Float(0.0));
-        test_parse(parse_primitive, "-.0!", "!", Primitive::Float(-0.0));
-        test_parse(parse_primitive, "-.023!", "!", Primitive::Float(-0.023));
-        test_parse(parse_primitive, "40_000!", "!", Primitive::Int(40_000));
-        test_parse(
-            parse_primitive,
-            r#""hello"!"#,
-            "!",
-            Primitive::Str("hello".into()),
+        assert_eq!(
+            parse(parse_primitive, "40 khz!"),
+            Some(("!", Primitive::Quantity((40.0, "khz".into())), vec![]))
         );
-        test_parse(
-            parse_primitive,
-            "\"he\\\"llo\"!",
-            "!",
-            Primitive::Str("he\"llo".into()),
+        assert_eq!(
+            parse(parse_primitive, "-40 khz!"),
+            Some(("!", Primitive::Quantity((-40.0, "khz".into())), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "40!"),
+            Some(("!", Primitive::Int(40), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "-0!"),
+            Some(("!", Primitive::Int(0), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "-0.0!"),
+            Some(("!", Primitive::Float(0.0), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "-.0!"),
+            Some(("!", Primitive::Float(-0.0), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "-.023!"),
+            Some(("!", Primitive::Float(-0.023), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "40_000!"),
+            Some(("!", Primitive::Int(40_000), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, r#""hello"!"#),
+            Some(("!", Primitive::Str("hello".into()), vec![]))
+        );
+        assert_eq!(
+            parse(parse_primitive, "\"he\\\"llo\"!"),
+            Some(("!", Primitive::Str("he\"llo".into()), vec![]))
         );
     }
 
@@ -535,25 +593,23 @@ mod tests {
     #[test]
     fn test_all_together() {
         assert_eq!(
-            parse_document(
-                " fn beat_reverb(int a, int b) {
+            debug(
+                parse_document(
+                    " fn beat_reverb(int a, int b) {
                       let bla = 5hz; a
                          + b
                  }
 
       let audio   = midi_in * bla  * bla(  4, 6)
-      ; play audio;  "
-                    .into(),
-            )
-            .map(debug),
-            Some(
-                "fn beat_reverb(int a, int b) { let bla = 5hz; (a + b) }
+      ; play audio;  ",
+                )
+                .0
+            ),
+            "fn beat_reverb(int a, int b) { let bla = 5hz; (a + b) }
 
 let audio = ((midi_in * bla) * bla(4, 6));
 
 play audio;"
-                    .into()
-            )
         );
     }
 }

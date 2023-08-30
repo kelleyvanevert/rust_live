@@ -6,8 +6,8 @@ mod ast;
 mod check;
 mod parse;
 
-pub fn parse_and_check(code: &str) -> Option<Document> {
-    parse_document(code.into()).map(check_document)
+pub fn parse_and_check(code: &str) -> Document {
+    check_document(parse_document(code).0)
 }
 
 fn main() {
