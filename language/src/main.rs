@@ -7,9 +7,9 @@ mod check;
 mod parse;
 
 pub fn parse_and_check(code: &str) -> Option<Document> {
-    parse_document(code).map(check_document)
+    parse_document(code.into()).map(check_document)
 }
 
 fn main() {
-    println!("{:?}", parse_document("play sine(440hz);"));
+    // println!("{:?}", parse_document("play sine(440hz);"));
 }

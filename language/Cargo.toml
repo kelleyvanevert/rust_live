@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 emath = "0.22.0"
 nom = "7.1.3"
+nom_locate = "4.2.0"

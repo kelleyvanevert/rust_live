@@ -11,8 +11,11 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, Parser,
 };
+use nom_locate::LocatedSpan;
 
 use crate::ast::*;
+
+type Span<'a> = LocatedSpan<&'a str>;
 
 #[allow(unused)]
 fn op(input: &str) -> IResult<&str, Op> {
@@ -25,7 +28,7 @@ fn op(input: &str) -> IResult<&str, Op> {
     .parse(input)
 }
 
-fn boolean(input: &str) -> IResult<&str, Primitive> {
+fn boolean(input: Span) -> IResult<Span, Primitive> {
     alt((
         value(Primitive::Bool(true), tag("true")),
         value(Primitive::Bool(false), tag("false")),
@@ -33,7 +36,7 @@ fn boolean(input: &str) -> IResult<&str, Primitive> {
     .parse(input)
 }
 
-fn math_constants(input: &str) -> IResult<&str, Primitive> {
+fn math_constants(input: Span) -> IResult<Span, Primitive> {
     alt((
         value(Primitive::Float(PI), tag("pi")),
         value(Primitive::Float(TAU), tag("tau")),
@@ -41,8 +44,8 @@ fn math_constants(input: &str) -> IResult<&str, Primitive> {
     .parse(input)
 }
 
-fn integer(input: &str) -> IResult<&str, i64> {
-    map(recognize(many1(alt((digit1::<&str, _>, tag("_"))))), |s| {
+fn integer(input: Span) -> IResult<Span, i64> {
+    map(recognize(many1(alt((digit1::<Span, _>, tag("_"))))), |s| {
         s.chars()
             .filter(|&c| c != '_')
             .collect::<String>()
@@ -53,10 +56,10 @@ fn integer(input: &str) -> IResult<&str, i64> {
 }
 
 // not amazingly written, but, well, works for now ;)
-fn numeric_primitive(input: &str) -> IResult<&str, Primitive> {
+fn numeric_primitive(input: Span) -> IResult<Span, Primitive> {
     map(
         tuple((
-            opt(alt((char::<&str, error::Error<&str>>('+'), char('-')))),
+            opt(alt((char::<Span, error::Error<Span>>('+'), char('-')))),
             alt((
                 map(
                     tuple((integer, opt(recognize(pair(char('.'), opt(digit1)))))),
@@ -65,7 +68,7 @@ fn numeric_primitive(input: &str) -> IResult<&str, Primitive> {
                         Some(rest) => Primitive::Float(int as f64 + rest.parse::<f64>().unwrap()),
                     },
                 ),
-                map(recognize(tuple((char('.'), digit1))), |s: &str| {
+                map(recognize(tuple((char('.'), digit1))), |s: Span| {
                     Primitive::Float(s.parse::<f64>().unwrap())
                 }),
             )),
@@ -73,7 +76,7 @@ fn numeric_primitive(input: &str) -> IResult<&str, Primitive> {
                 multispace0,
                 map(
                     alt((tag("min"), tag("ms"), tag("s"), tag("khz"), tag("hz"))),
-                    Unit::from,
+                    |span: Span| Unit::from(span.to_string().as_ref()),
                 ),
             )),
         )),
@@ -92,11 +95,11 @@ fn numeric_primitive(input: &str) -> IResult<&str, Primitive> {
     .parse(input)
 }
 
-fn parse_str(input: &str) -> IResult<&str, String> {
+fn parse_str(input: Span) -> IResult<Span, String> {
     escaped_transform(alphanumeric1, '\\', one_of("\"\n\\")).parse(input)
 }
 
-fn string(input: &str) -> IResult<&str, Primitive> {
+fn string(input: Span) -> IResult<Span, Primitive> {
     map(
         preceded(char('\"'), cut(terminated(parse_str, char('\"')))),
         Primitive::Str,
@@ -104,11 +107,11 @@ fn string(input: &str) -> IResult<&str, Primitive> {
     .parse(input)
 }
 
-pub fn parse_primitive(input: &str) -> IResult<&str, Primitive> {
+pub fn parse_primitive(input: Span) -> IResult<Span, Primitive> {
     alt((boolean, numeric_primitive, math_constants, string)).parse(input)
 }
 
-fn parenthesized_expr(i: &str) -> IResult<&str, Expr> {
+fn parenthesized_expr(i: Span) -> IResult<Span, Expr> {
     delimited(
         tag("("),
         map(parse_expression, |e| Expr::Paren(Box::new(e))),
@@ -117,7 +120,7 @@ fn parenthesized_expr(i: &str) -> IResult<&str, Expr> {
     .parse(i)
 }
 
-fn parse_block(input: &str) -> IResult<&str, Block> {
+fn parse_block(input: Span) -> IResult<Span, Block> {
     delimited(
         tag("{"),
         map(
@@ -136,7 +139,7 @@ fn parse_block(input: &str) -> IResult<&str, Block> {
     .parse(input)
 }
 
-fn access_or_call(input: &str) -> IResult<&str, Expr> {
+fn access_or_call(input: Span) -> IResult<Span, Expr> {
     map(
         pair(
             identifier,
@@ -160,7 +163,7 @@ fn access_or_call(input: &str) -> IResult<&str, Expr> {
     .parse(input)
 }
 
-fn factor(i: &str) -> IResult<&str, Expr> {
+fn factor(i: Span) -> IResult<Span, Expr> {
     delimited(
         multispace0,
         alt((
@@ -189,7 +192,7 @@ fn fold_exprs(initial: Expr, remainder: Vec<(Op, Expr)>) -> Expr {
     })
 }
 
-fn term(i: &str) -> IResult<&str, Expr> {
+fn term(i: Span) -> IResult<Span, Expr> {
     let (i, initial) = factor(i)?;
     let (i, remainder) = many0(alt((
         |i| {
@@ -206,7 +209,7 @@ fn term(i: &str) -> IResult<&str, Expr> {
     Ok((i, fold_exprs(initial, remainder)))
 }
 
-pub fn parse_expression(i: &str) -> IResult<&str, Expr> {
+pub fn parse_expression(i: Span) -> IResult<Span, Expr> {
     let (i, initial) = term(i)?;
     let (i, remainder) = many0(alt((
         |i| {
@@ -223,18 +226,18 @@ pub fn parse_expression(i: &str) -> IResult<&str, Expr> {
     Ok((i, fold_exprs(initial, remainder)))
 }
 
-fn identifier(input: &str) -> IResult<&str, Identifier> {
+fn identifier(input: Span) -> IResult<Span, Identifier> {
     map(
         recognize(tuple((
             alt((alpha1, tag("_"))),
             many0(alt((alphanumeric1, tag("_")))),
         ))),
-        |str: &str| Identifier(str.into()),
+        |str: Span| Identifier(str.to_string()),
     )
     .parse(input)
 }
 
-fn parse_param(input: &str) -> IResult<&str, Param> {
+fn parse_param(input: Span) -> IResult<Span, Param> {
     map(
         pair(opt(terminated(identifier, multispace1)), identifier),
         |(ty, name)| Param { ty, name },
@@ -242,7 +245,7 @@ fn parse_param(input: &str) -> IResult<&str, Param> {
     .parse(input)
 }
 
-fn parse_anonymous_function(input: &str) -> IResult<&str, AnonymousFn> {
+fn parse_anonymous_function(input: Span) -> IResult<Span, AnonymousFn> {
     map(
         preceded(
             pair(tag("|"), space0),
@@ -262,7 +265,7 @@ fn parse_anonymous_function(input: &str) -> IResult<&str, AnonymousFn> {
     .parse(input)
 }
 
-fn parse_function_declaration(input: &str) -> IResult<&str, FnDecl> {
+fn parse_function_declaration(input: Span) -> IResult<Span, FnDecl> {
     map(
         preceded(
             pair(tag("fn"), space1),
@@ -289,7 +292,7 @@ fn parse_function_declaration(input: &str) -> IResult<&str, FnDecl> {
     .parse(input)
 }
 
-fn parse_item(input: &str) -> IResult<&str, Item> {
+fn parse_item(input: Span) -> IResult<Span, Item> {
     alt((
         map(parse_function_declaration, |fndecl| {
             Item::FnDecl(Box::new(fndecl))
@@ -299,7 +302,7 @@ fn parse_item(input: &str) -> IResult<&str, Item> {
     .parse(input)
 }
 
-pub fn parse_statement(input: &str) -> IResult<&str, Stmt> {
+pub fn parse_statement(input: Span) -> IResult<Span, Stmt> {
     alt((
         map(tag(";"), |_| Stmt::Skip),
         map(
@@ -338,7 +341,7 @@ pub fn parse_statement(input: &str) -> IResult<&str, Stmt> {
     .parse(input)
 }
 
-pub fn parse_document(input: &str) -> Option<Document> {
+pub fn parse_document(input: Span) -> Option<Document> {
     terminated(
         map(
             tuple((multispace0, many0(terminated(parse_statement, multispace0)))),
@@ -351,163 +354,208 @@ pub fn parse_document(input: &str) -> Option<Document> {
     .map(|p| p.1)
 }
 
-#[test]
-fn test_primitives() {
-    assert_eq!(parse_primitive("true!"), Ok(("!", Primitive::Bool(true))));
-    assert_eq!(parse_primitive("3.14!"), Ok(("!", Primitive::Float(3.14))));
-    assert_eq!(
-        parse_primitive("440hz!"),
-        Ok(("!", Primitive::Quantity((440.0, "hz".into()))))
-    );
-    assert_eq!(
-        parse_primitive("40 khz!"),
-        Ok(("!", Primitive::Quantity((40.0, "khz".into()))))
-    );
-    assert_eq!(
-        parse_primitive("-40 khz!"),
-        Ok(("!", Primitive::Quantity((-40.0, "khz".into()))))
-    );
-    assert_eq!(parse_primitive("40!"), Ok(("!", Primitive::Int(40))));
-    assert_eq!(parse_primitive("-0!"), Ok(("!", Primitive::Int(0))));
-    assert_eq!(parse_primitive("-0.0!"), Ok(("!", Primitive::Float(0.0))));
-    assert_eq!(parse_primitive("-.0!"), Ok(("!", Primitive::Float(-0.0))));
-    assert_eq!(
-        parse_primitive("-.023!"),
-        Ok(("!", Primitive::Float(-0.023)))
-    );
-    assert_eq!(
-        parse_primitive("40_000!"),
-        Ok(("!", Primitive::Int(40_000)))
-    );
-    assert_eq!(
-        parse_primitive(r#""hello"!"#),
-        Ok(("!", Primitive::Str("hello".into())))
-    );
-    assert_eq!(
-        parse_primitive("\"he\\\"llo\"!"),
-        Ok(("!", Primitive::Str("he\"llo".into())))
-    );
-    assert_eq!("456".parse::<f64>(), Ok(456.0));
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-#[test]
-fn test_factor() {
-    assert_eq!(factor("  3  "), Ok(("", Expr::Prim(Primitive::Int(3)))));
-    assert_eq!(
-        factor("  3  ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "3".into()))
-    );
-}
+    fn test_parse<'a, R, E>(
+        mut parser: impl Parser<Span<'a>, R, E>,
+        input: &'a str,
+        rem: &'a str,
+        res: R,
+    ) where
+        R: std::fmt::Debug + PartialEq,
+        E: std::fmt::Debug + PartialEq,
+    {
+        assert_eq!(
+            parser
+                .parse(input.into())
+                .map(|(span, res)| (span.to_string(), res)),
+            Ok((rem.to_string(), res))
+        );
+    }
 
-#[test]
-fn test_term() {
-    assert_eq!(
-        term(" 3 *  5   ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "(3 * 5)".into()))
-    );
+    fn debug<T: std::fmt::Debug>(x: T) -> String {
+        format!("{:?}", x)
+    }
 
-    assert_eq!(
-        term(" 3 *  5hz   ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "(3 * 5hz)".into()))
-    );
-}
+    #[test]
+    fn test_primitives() {
+        test_parse(parse_primitive, "true!", "!", Primitive::Bool(true));
+        test_parse(parse_primitive, "3.14!", "!", Primitive::Float(3.14));
+        test_parse(
+            parse_primitive,
+            "440hz!",
+            "!",
+            Primitive::Quantity((440.0, "hz".into())),
+        );
+        test_parse(
+            parse_primitive,
+            "40 khz!",
+            "!",
+            Primitive::Quantity((40.0, "khz".into())),
+        );
+        test_parse(
+            parse_primitive,
+            "-40 khz!",
+            "!",
+            Primitive::Quantity((-40.0, "khz".into())),
+        );
+        test_parse(parse_primitive, "40!", "!", Primitive::Int(40));
+        test_parse(parse_primitive, "-0!", "!", Primitive::Int(0));
+        test_parse(parse_primitive, "-0.0!", "!", Primitive::Float(0.0));
+        test_parse(parse_primitive, "-.0!", "!", Primitive::Float(-0.0));
+        test_parse(parse_primitive, "-.023!", "!", Primitive::Float(-0.023));
+        test_parse(parse_primitive, "40_000!", "!", Primitive::Int(40_000));
+        test_parse(
+            parse_primitive,
+            r#""hello"!"#,
+            "!",
+            Primitive::Str("hello".into()),
+        );
+        test_parse(
+            parse_primitive,
+            "\"he\\\"llo\"!",
+            "!",
+            Primitive::Str("he\"llo".into()),
+        );
+    }
 
-#[test]
-fn test_expr() {
-    assert_eq!(
-        parse_expression(" 1 + 2 *  3 ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "(1 + (2 * 3))".into()))
-    );
-    assert_eq!(
-        parse_expression(" 1 + 2 hz *  3 / 4 - 5 ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "((1 + ((2hz * 3) / 4)) - 5)".into()))
-    );
-    assert_eq!(
-        parse_expression(" 72 / 2 / 3 ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "((72 / 2) / 3)".into()))
-    );
-}
+    #[test]
+    fn test_expr_factor() {
+        test_parse(factor, "  3  ", "", Expr::Prim(Primitive::Int(3)));
+        test_parse(map(factor, debug), "  3  ", "", "3".into());
+    }
 
-#[test]
-fn test_parens() {
-    assert_eq!(
-        parse_expression(" ( 1.2s + (2) ) *  3 ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "(((1.2s + (2))) * 3)".into()))
-    );
-}
+    #[test]
+    fn test_term() {
+        test_parse(map(term, debug), " 3 *  5   ", "", "(3 * 5)".into());
+        test_parse(map(term, debug), " 3 *  5hz   ", "", "(3 * 5hz)".into());
+    }
 
-#[test]
-fn test_block_expr() {
-    assert_eq!(
-        parse_expression(" ( 1.2s + { let x = 2; 5; x + 1 } ) *  3 ")
-            .map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "(((1.2s + { let x = 2; 5; (x + 1) })) * 3)".into()))
-    );
-    assert_eq!(
-        parse_expression(" ( 1.2s + { let x = 2; 5; x + 1; } ) *  3 ")
-            .map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("", "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into()))
-    );
-}
+    #[test]
+    fn test_expr() {
+        test_parse(
+            map(parse_expression, debug),
+            " 1 + 2 *  3 ",
+            "",
+            "(1 + (2 * 3))".into(),
+        );
+        test_parse(
+            map(parse_expression, debug),
+            " 1 + 2 hz *  3 / 4 - 5 ",
+            "",
+            "((1 + ((2hz * 3) / 4)) - 5)".into(),
+        );
+        test_parse(
+            map(parse_expression, debug),
+            " 72 / 2 / 3 ",
+            "",
+            "((72 / 2) / 3)".into(),
+        );
+    }
 
-#[test]
-fn test_fn_expr() {
-    assert_eq!(
-        parse_param("osc s, ").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok((", ", "osc s".into()))
-    );
-    assert_eq!(
-        parse_expression("|osc s| s + 5hz?!").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("?!", "|osc s| (s + 5hz)".into()))
-    );
-    assert_eq!(
-        parse_expression("|osc s| { s + 5hz }?!").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("?!", "|osc s| { (s + 5hz) }".into()))
-    );
-    assert_eq!(
-        parse_statement("let x = |osc s| { s + 5hz };?!").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("?!", "let x = |osc s| { (s + 5hz) };".into()))
-    );
-}
+    #[test]
+    fn test_parens() {
+        test_parse(
+            map(parse_expression, debug),
+            " ( 1.2s + (2) ) *  3 ",
+            "",
+            "(((1.2s + (2))) * 3)".into(),
+        );
+    }
 
-#[test]
-fn test_stmts() {
-    assert_eq!(
-        parse_statement("return 26; }").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok((" }", "return 26;".into()))
-    );
-    assert_eq!(
-        parse_statement("let x= (26 * 1hz); }").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok((" }", "let x = ((26 * 1hz));".into()))
-    );
-    assert_eq!(
-        parse_statement("fn add( int x, wave bla) { 5 }?").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("?", "fn add(int x, wave bla) { 5 }".into()))
-    );
-    assert_eq!(
-        parse_statement("fn add( int x, wave bla, ) { 5 }?").map(|(i, x)| (i, format!("{:?}", x))),
-        Ok(("?", "fn add(int x, wave bla) { 5 }".into()))
-    );
-}
+    #[test]
+    fn test_block_expr() {
+        test_parse(
+            map(parse_expression, debug),
+            " ( 1.2s + { let x = 2; 5; x + 1 } ) *  3 ",
+            "",
+            "(((1.2s + { let x = 2; 5; (x + 1) })) * 3)".into(),
+        );
+        test_parse(
+            map(parse_expression, debug),
+            " ( 1.2s + { let x = 2; 5; x + 1; } ) *  3 ",
+            "",
+            "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
+        );
+    }
 
-#[test]
-fn test_all_together() {
-    assert_eq!(
-        parse_document(
-            "fn beat_reverb(int a, int b) { let bla = 5hz; a + b }
-        
-        let audio = midi_in * bla * bla(4, 6) ; play audio;  "
-        )
-        .map(|x| format!("{:?}", x)),
-        Some(
-            "fn beat_reverb(int a, int b) { let bla = 5hz; (a + b) }
+    #[test]
+    fn test_fn_expr() {
+        test_parse(map(parse_param, debug), "osc s, ", ", ", "osc s".into());
+        test_parse(
+            map(parse_expression, debug),
+            "|osc s| s + 5hz?!",
+            "?!",
+            "|osc s| (s + 5hz)".into(),
+        );
+        test_parse(
+            map(parse_expression, debug),
+            "|osc s| { s + 5hz }?!",
+            "?!",
+            "|osc s| { (s + 5hz) }".into(),
+        );
+        test_parse(
+            map(parse_statement, debug),
+            "let x = |osc s| { s + 5hz };?!",
+            "?!",
+            "let x = |osc s| { (s + 5hz) };".into(),
+        );
+    }
+
+    #[test]
+    fn test_stmts() {
+        test_parse(
+            map(parse_statement, debug),
+            "return 26; }",
+            " }",
+            "return 26;".into(),
+        );
+        test_parse(
+            map(parse_statement, debug),
+            "let x= (26 * 1hz); }",
+            " }",
+            "let x = ((26 * 1hz));".into(),
+        );
+        test_parse(
+            map(parse_statement, debug),
+            "fn add( int x, wave bla) { 5 }?",
+            "?",
+            "fn add(int x, wave bla) { 5 }".into(),
+        );
+        test_parse(
+            map(parse_statement, debug),
+            "fn add( int x, wave bla, ) { 5 }?",
+            "?",
+            "fn add(int x, wave bla) { 5 }".into(),
+        );
+    }
+
+    #[test]
+    fn test_all_together() {
+        assert_eq!(
+            parse_document(
+                " fn beat_reverb(int a, int b) {
+                      let bla = 5hz; a
+                         + b
+                 }
+
+      let audio   = midi_in * bla  * bla(  4, 6)
+      ; play audio;  "
+                    .into(),
+            )
+            .map(debug),
+            Some(
+                "fn beat_reverb(int a, int b) { let bla = 5hz; (a + b) }
 
 let audio = ((midi_in * bla) * bla(4, 6));
 
 play audio;"
-                .into()
-        )
-    );
+                    .into()
+            )
+        );
+    }
 }
 
 /*
