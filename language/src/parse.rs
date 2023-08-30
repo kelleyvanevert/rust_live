@@ -11,7 +11,7 @@ use nom::{
     branch::*,
     bytes::complete::*,
     character::complete::{char, *},
-    combinator::{cut, eof, map, opt, recognize, value},
+    combinator::{cut, eof, map, opt, recognize, value, verify},
     error,
     multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -41,6 +41,35 @@ impl ParseState {
 pub type Span<'a> = nom_locate::LocatedSpan<&'a str, ParseState>;
 
 pub type ParseResult<'a, T> = nom::IResult<Span<'a>, T>;
+
+fn span_range(span: &Span) -> Range<usize> {
+    Range {
+        start: span.location_offset(),
+        end: span.location_offset() + span.len(),
+    }
+}
+
+/// Evaluate `parser` and wrap the result in a `Some(_)`. Otherwise,
+/// emit the  provided `error_msg` and return a `None` while allowing
+/// parsing to continue.
+fn expecting<'a, F, E, T>(parser: F, error_msg: E) -> impl Fn(Span<'a>) -> ParseResult<Option<T>>
+where
+    F: Fn(Span<'a>) -> ParseResult<T>,
+    E: ToString,
+{
+    move |input: Span| {
+        match parser(input) {
+            Ok((remaining, out)) => Ok((remaining, Some(out))),
+            Err(nom::Err::Error(nom::error::Error { input, .. }))
+            | Err(nom::Err::Failure(nom::error::Error { input, .. })) => {
+                let err = ParseError(span_range(&input), error_msg.to_string());
+                input.extra.report_error(err); // Push error onto stack.
+                Ok((input, None)) // Parsing failed, but keep going.
+            }
+            Err(err) => Err(err),
+        }
+    }
+}
 
 #[allow(unused)]
 fn op(input: &str) -> IResult<&str, Op> {
@@ -137,10 +166,13 @@ pub fn parse_primitive(input: Span) -> ParseResult<Primitive> {
 }
 
 fn parenthesized_expr(i: Span) -> ParseResult<Expr> {
-    delimited(
-        tag("("),
-        map(parse_expression, |e| Expr::Paren(Box::new(e))),
-        tag(")"),
+    map(
+        delimited(
+            tag("("),
+            expecting(parse_expression, "expected expression after `(`"),
+            expecting(tag(")"), "missing `)`"),
+        ),
+        |inner| Expr::Paren(Box::new(inner.unwrap_or(Expr::Error))),
     )
     .parse(i)
 }
@@ -159,7 +191,7 @@ fn parse_block(input: Span) -> ParseResult<Block> {
                 expr: expr.map(Box::new),
             },
         ),
-        tag("}"),
+        expecting(tag("}"), "missing `}`"),
     )
     .parse(input)
 }
@@ -167,7 +199,7 @@ fn parse_block(input: Span) -> ParseResult<Block> {
 fn access_or_call(input: Span) -> ParseResult<Expr> {
     map(
         pair(
-            identifier,
+            parse_identifier,
             opt(tuple((
                 multispace0,
                 tag("("),
@@ -177,12 +209,14 @@ fn access_or_call(input: Span) -> ParseResult<Expr> {
                     parse_expression,
                 ),
                 multispace0,
-                tag(")"),
+                opt(tag(",")),
+                multispace0,
+                expecting(tag(")"), "missing `)` after call"),
             ))),
         ),
         |(id, rest)| match rest {
             None => Expr::Var(id),
-            Some((_, _, _, args, _, _)) => Expr::Call(CallExpr { id, args }),
+            Some((_, _, _, args, _, _, _, _)) => Expr::Call(CallExpr { id, args }),
         },
     )
     .parse(input)
@@ -251,20 +285,30 @@ pub fn parse_expression(i: Span) -> ParseResult<Expr> {
     Ok((i, fold_exprs(initial, remainder)))
 }
 
-fn identifier(input: Span) -> ParseResult<Identifier> {
+fn is_keyword(str: &str) -> bool {
+    str == "let" || str == "fn" || str == "return" || str == "play" || str == "pause"
+}
+
+fn parse_identifier(input: Span) -> ParseResult<Identifier> {
     map(
-        recognize(tuple((
-            alt((alpha1, tag("_"))),
-            many0(alt((alphanumeric1, tag("_")))),
-        ))),
-        |str: Span| Identifier(str.to_string()),
+        verify(
+            recognize(tuple((
+                alt((alpha1, tag("_"))),
+                many0(alt((alphanumeric1, tag("_")))),
+            ))),
+            |span: &Span| !is_keyword(&span.to_string()),
+        ),
+        |span: Span| Identifier(span.to_string()),
     )
     .parse(input)
 }
 
 fn parse_param(input: Span) -> ParseResult<Param> {
     map(
-        pair(opt(terminated(identifier, multispace1)), identifier),
+        pair(
+            opt(terminated(parse_identifier, multispace1)),
+            parse_identifier,
+        ),
         |(ty, name)| Param { ty, name },
     )
     .parse(input)
@@ -295,7 +339,7 @@ fn parse_function_declaration(input: Span) -> ParseResult<FnDecl> {
         preceded(
             pair(tag("fn"), space1),
             cut(tuple((
-                identifier,
+                parse_identifier,
                 multispace0,
                 tag("("),
                 multispace0,
@@ -332,36 +376,46 @@ pub fn parse_statement(input: Span) -> ParseResult<Stmt> {
         map(tag(";"), |_| Stmt::Skip),
         map(
             preceded(
-                pair(tag("return"), space1),
-                cut(tuple((parse_expression, tag(";")))),
+                pair(tag("return"), space0),
+                cut(tuple((
+                    opt(parse_expression),
+                    expecting(tag(";"), "missing `;`"),
+                ))),
             ),
-            |(expr, _)| Stmt::Return(Box::new(expr)),
+            |(expr, _)| Stmt::Return(expr.map(Box::new)),
         ),
         map(
             preceded(
-                pair(tag("play"), space1),
-                cut(tuple((parse_expression, tag(";")))),
+                pair(tag("play"), space0),
+                cut(tuple((
+                    expecting(parse_expression, "missing play expression"),
+                    expecting(tag(";"), "missing `;`"),
+                ))),
             ),
-            |(expr, _)| Stmt::Play(Box::new(expr)),
+            |(expr, _)| Stmt::Play(Expected(expr.map(Box::new))),
         ),
         map(
             preceded(
                 pair(tag("let"), space1),
                 cut(tuple((
-                    identifier,
+                    expecting(parse_identifier, "missing let identifier"),
                     multispace0,
-                    tag("="),
+                    expecting(tag("="), "missing `=`"),
                     multispace0,
-                    parse_expression,
-                    tag(";"),
+                    expecting(parse_expression, "missing let expression"),
+                    expecting(tag(";"), "missing `;`"),
                 ))),
             ),
-            |(id, _, _, _, expr, _)| Stmt::Let((id, Box::new(expr))),
+            |(id, _, _, _, expr, _)| Stmt::Let((Expected(id), Expected(expr.map(Box::new)))),
         ),
         map(parse_item, |item| Stmt::Item(Box::new(item))),
-        map(terminated(parse_expression, tag(";")), |expr| {
-            Stmt::Expr(Box::new(expr))
-        }),
+        map(
+            terminated(
+                parse_expression,
+                tag(";"), // tricky: we can't add `expecting(...)` here, because then the return expression of a block would convert into a statement during parsing... But, this it doesn't seem smart to leave it out either..?
+            ),
+            |expr| Stmt::Expr(Box::new(expr)),
+        ),
     ))
     .parse(input)
 }
@@ -412,11 +466,23 @@ mod tests {
         input: &'a str,
         rem: &'a str,
         res: R,
+        errors: Vec<&str>,
     ) where
         R: std::fmt::Debug + PartialEq,
         E: std::fmt::Debug + PartialEq,
     {
-        assert_eq!(parse(parser, input), Some((rem, res, vec![])));
+        let parse_result = parse(parser, input);
+        assert!(parse_result.is_some());
+        let (remaining, result, parse_errors) = parse_result.unwrap();
+        assert_eq!(remaining, rem);
+        assert_eq!(result, res);
+        assert_eq!(
+            errors,
+            parse_errors
+                .into_iter()
+                .map(|err| err.1)
+                .collect::<Vec<_>>()
+        );
     }
 
     fn debug<T: std::fmt::Debug>(x: T) -> String {
@@ -480,15 +546,61 @@ mod tests {
     }
 
     #[test]
+    fn test_expr_errors() {
+        assert_eq!(
+            parse(parse_expression, "123!"),
+            Some(("!", Expr::Prim(Primitive::Int(123)), vec![]))
+        );
+
+        test_parse(
+            map(parse_expression, debug),
+            "(123)!",
+            "!",
+            "(123)".into(),
+            vec![],
+        );
+
+        test_parse(
+            map(parse_expression, debug),
+            "(123!",
+            "!",
+            "(123)".into(),
+            vec!["missing `)`"],
+        );
+
+        test_parse(
+            map(parse_expression, debug),
+            "(123 + 456!",
+            "!",
+            "((123 + 456))".into(),
+            vec!["missing `)`"],
+        );
+
+        test_parse(
+            map(parse_expression, debug),
+            "123 + ()!",
+            "!",
+            "(123 + (<ERR>))".into(),
+            vec!["expected expression after `(`"],
+        );
+    }
+
+    #[test]
     fn test_expr_factor() {
-        test_parse(factor, "  3  ", "", Expr::Prim(Primitive::Int(3)));
-        test_parse(map(factor, debug), "  3  ", "", "3".into());
+        test_parse(factor, "  3  ", "", Expr::Prim(Primitive::Int(3)), vec![]);
+        test_parse(map(factor, debug), "  3  ", "", "3".into(), vec![]);
     }
 
     #[test]
     fn test_term() {
-        test_parse(map(term, debug), " 3 *  5   ", "", "(3 * 5)".into());
-        test_parse(map(term, debug), " 3 *  5hz   ", "", "(3 * 5hz)".into());
+        test_parse(map(term, debug), " 3 *  5   ", "", "(3 * 5)".into(), vec![]);
+        test_parse(
+            map(term, debug),
+            " 3 *  5hz   ",
+            "",
+            "(3 * 5hz)".into(),
+            vec![],
+        );
     }
 
     #[test]
@@ -498,18 +610,21 @@ mod tests {
             " 1 + 2 *  3 ",
             "",
             "(1 + (2 * 3))".into(),
+            vec![],
         );
         test_parse(
             map(parse_expression, debug),
             " 1 + 2 hz *  3 / 4 - 5 ",
             "",
             "((1 + ((2hz * 3) / 4)) - 5)".into(),
+            vec![],
         );
         test_parse(
             map(parse_expression, debug),
             " 72 / 2 / 3 ",
             "",
             "((72 / 2) / 3)".into(),
+            vec![],
         );
     }
 
@@ -520,6 +635,7 @@ mod tests {
             " ( 1.2s + (2) ) *  3 ",
             "",
             "(((1.2s + (2))) * 3)".into(),
+            vec![],
         );
     }
 
@@ -530,35 +646,110 @@ mod tests {
             " ( 1.2s + { let x = 2; 5; x + 1 } ) *  3 ",
             "",
             "(((1.2s + { let x = 2; 5; (x + 1) })) * 3)".into(),
+            vec![],
         );
+
         test_parse(
             map(parse_expression, debug),
             " ( 1.2s + { let x = 2; 5; x + 1; } ) *  3 ",
             "",
             "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
+            vec![],
+        );
+
+        test_parse(
+            map(parse_expression, debug),
+            " ( 1.2s + { let x = 2; 5; x + 1;  ) *  3 ",
+            "",
+            "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
+            vec!["missing `}`"],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "let x = a(2, 3;more",
+            "more",
+            "let x = a(2, 3);".into(),
+            vec!["missing `)` after call"],
         );
     }
 
     #[test]
     fn test_fn_expr() {
-        test_parse(map(parse_param, debug), "osc s, ", ", ", "osc s".into());
+        test_parse(
+            map(parse_param, debug),
+            "osc s, ",
+            ", ",
+            "osc s".into(),
+            vec![],
+        );
+
         test_parse(
             map(parse_expression, debug),
             "|osc s| s + 5hz?!",
             "?!",
             "|osc s| (s + 5hz)".into(),
+            vec![],
         );
+
         test_parse(
             map(parse_expression, debug),
             "|osc s| { s + 5hz }?!",
             "?!",
             "|osc s| { (s + 5hz) }".into(),
+            vec![],
         );
+
         test_parse(
             map(parse_statement, debug),
             "let x = |osc s| { s + 5hz };?!",
             "?!",
             "let x = |osc s| { (s + 5hz) };".into(),
+            vec![],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "let = |osc s| { s + 5hz };?!",
+            "?!",
+            "let <MISSING> = |osc s| { (s + 5hz) };".into(),
+            vec!["missing let identifier"],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "let xyz =  ?!",
+            "?!",
+            "let xyz = <MISSING>;".into(),
+            vec!["missing let expression", "missing `;`"],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "let xyz; let a = 4",
+            " let a = 4",
+            "let xyz = <MISSING>;".into(),
+            vec!["missing `=`", "missing let expression"],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "let xyz 234; let a = 4",
+            " let a = 4",
+            "let xyz = 234;".into(),
+            vec!["missing `=`"],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "let = let a=b; let xyz=23;",
+            "let a=b; let xyz=23;",
+            "let <MISSING> = <MISSING>;".into(),
+            vec![
+                "missing let identifier",
+                "missing let expression",
+                "missing `;`",
+            ],
         );
     }
 
@@ -569,24 +760,45 @@ mod tests {
             "return 26; }",
             " }",
             "return 26;".into(),
+            vec![],
         );
+
+        test_parse(
+            map(parse_statement, debug),
+            "return 26 }",
+            "}",
+            "return 26;".into(),
+            vec!["missing `;`"],
+        );
+
         test_parse(
             map(parse_statement, debug),
             "let x= (26 * 1hz); }",
             " }",
             "let x = ((26 * 1hz));".into(),
+            vec![],
         );
         test_parse(
             map(parse_statement, debug),
             "fn add( int x, wave bla) { 5 }?",
             "?",
             "fn add(int x, wave bla) { 5 }".into(),
+            vec![],
         );
         test_parse(
             map(parse_statement, debug),
             "fn add( int x, wave bla, ) { 5 }?",
             "?",
             "fn add(int x, wave bla) { 5 }".into(),
+            vec![],
+        );
+
+        test_parse(
+            map(parse_statement, debug),
+            "play?",
+            "?",
+            "play <MISSING>;".into(),
+            vec!["missing play expression", "missing `;`"],
         );
     }
 

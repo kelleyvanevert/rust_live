@@ -1,5 +1,8 @@
 use std::fmt::{self, Debug, Display, Formatter};
 
+#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+pub struct Expected<T>(pub Option<T>);
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Unit {
     Min,
@@ -33,9 +36,9 @@ pub enum Op {
 pub enum Stmt {
     Skip,
     Expr(Box<Expr>),
-    Let((Identifier, Box<Expr>)),
-    Return(Box<Expr>),
-    Play(Box<Expr>),
+    Let((Expected<Identifier>, Expected<Box<Expr>>)),
+    Return(Option<Box<Expr>>),
+    Play(Expected<Box<Expr>>),
     Item(Box<Item>),
 }
 
@@ -90,6 +93,8 @@ pub enum Expr {
     Paren(Box<Expr>),
     Block(Box<Block>),
     AnonymousFn(Box<AnonymousFn>),
+
+    Error,
 }
 
 #[derive(Clone, PartialEq, PartialOrd)]
@@ -189,6 +194,24 @@ impl Debug for Document {
     }
 }
 
+impl<T: Display> Display for Expected<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Some(value) => write!(f, "{}", value),
+            None => write!(f, "<MISSING>"),
+        }
+    }
+}
+
+impl<T: Debug> Debug for Expected<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.0 {
+            Some(value) => write!(f, "{:?}", value),
+            None => write!(f, "<MISSING>"),
+        }
+    }
+}
+
 impl Display for Expr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         use self::Expr::*;
@@ -203,6 +226,7 @@ impl Display for Expr {
             Paren(expr) => write!(f, "({})", expr),
             Block(block) => write!(f, "{}", block),
             AnonymousFn(fun) => write!(f, "{}", fun),
+            Error => write!(f, "<ERR>"),
         }
     }
 }
@@ -221,6 +245,7 @@ impl Debug for Expr {
             Paren(expr) => write!(f, "({:?})", expr),
             Block(block) => write!(f, "{:?}", block),
             AnonymousFn(fun) => write!(f, "{:?}", fun),
+            Error => write!(f, "<ERR>"),
         }
     }
 }
@@ -264,7 +289,10 @@ impl Display for Stmt {
             Skip => write!(f, ";"),
             Expr(expr) => write!(f, "{};", expr),
             Let((id, expr)) => write!(f, "let {} = {};", id, expr),
-            Return(expr) => write!(f, "return {};", expr),
+            Return(expr) => match expr {
+                Some(expr) => write!(f, "return {};", expr),
+                None => write!(f, "return;"),
+            },
             Play(expr) => write!(f, "play {};", expr),
             Item(item) => write!(f, "{}", item),
         }
@@ -278,7 +306,10 @@ impl Debug for Stmt {
             Skip => write!(f, ";"),
             Expr(expr) => write!(f, "{:?};", expr),
             Let((id, expr)) => write!(f, "let {} = {:?};", id, expr),
-            Return(expr) => write!(f, "return {:?};", expr),
+            Return(expr) => match expr {
+                Some(expr) => write!(f, "return {:?};", expr),
+                None => write!(f, "return;"),
+            },
             Play(expr) => write!(f, "play {:?};", expr),
             Item(item) => write!(f, "{:?}", item),
         }
