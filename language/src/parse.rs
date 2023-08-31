@@ -17,8 +17,9 @@ use nom::{
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, Parser,
 };
+use nom_locate::position;
 
-use crate::ast::*;
+use crate::ast::{SyntaxNode, *};
 
 /// Error containing a text span and an error message to display.
 #[derive(Debug, Clone, PartialEq)]
@@ -27,7 +28,7 @@ pub struct ParseError(pub Range<usize>, pub String);
 /// Carried around in the `LocatedSpan::extra` field in
 /// between `nom` parsers.
 #[derive(Clone, Debug)]
-pub struct ParseState(Arc<RefCell<Vec<ParseError>>>);
+pub struct ParseState(pub Arc<RefCell<Vec<ParseError>>>);
 
 impl ParseState {
     /// Pushes an error onto the errors stack from within a `nom`
@@ -42,7 +43,7 @@ pub type Span<'a> = nom_locate::LocatedSpan<&'a str, ParseState>;
 
 pub type ParseResult<'a, T> = nom::IResult<Span<'a>, T>;
 
-fn span_range(span: &Span) -> Range<usize> {
+pub fn span_range(span: &Span) -> Range<usize> {
     Range {
         start: span.location_offset(),
         end: span.location_offset() + span.len(),
@@ -82,6 +83,50 @@ fn op(input: &str) -> IResult<&str, Op> {
     .parse(input)
 }
 
+// #[derive(Debug, Clone, Copy)]
+// pub enum SyntaxKind {
+//     LiteralBool,
+//     LiteralMathConst,
+// }
+
+// #[derive(Debug)]
+// pub struct SyntaxNode<'a> {
+//     pub pos: Span<'a>,
+//     pub kind: SyntaxKind,
+//     pub children: Vec<SyntaxNode<'a>>,
+// }
+
+// mod ast {
+//     use super::*;
+
+//     enum Expr {
+//         Bool(bool),
+//         Float(f64),
+//     }
+
+//     impl Expr {
+//         fn cast(node: SyntaxNode) -> Option<Expr> {
+//             match node.kind {
+//                 SyntaxKind::LiteralBool => Some(Expr::Bool(node.pos.starts_with("true"))),
+//                 SyntaxKind::LiteralMathConst => match *node.pos.fragment() {
+//                     "pi" => Some(Expr::Float(std::f64::consts::PI)),
+//                     "tau" => Some(Expr::Float(std::f64::consts::TAU)),
+//                     _ => unreachable!(),
+//                 },
+//                 _ => None,
+//             }
+//         }
+//     }
+// }
+
+// // fn bool2(input: Span) -> ParseResult<SyntaxNode> {
+// //     map(tag("true"), |pos| SyntaxNode {
+// //         pos,
+// //         kind: SyntaxKind::BoolLiteral,
+// //     })
+// //     .parse(input)
+// // }
+
 fn boolean(input: Span) -> ParseResult<Primitive> {
     alt((
         value(Primitive::Bool(true), tag("true")),
@@ -89,6 +134,53 @@ fn boolean(input: Span) -> ParseResult<Primitive> {
     ))
     .parse(input)
 }
+
+// fn boolean_node(input: Span) -> ParseResult<SyntaxNode> {
+//     syntax_node(SyntaxKind::LiteralBool, alt((tag("true"), tag("false")))).parse(input)
+// }
+
+// pub fn syntax_node<'a, E>(
+//     kind: SyntaxKind,
+//     mut parser: impl Parser<Span<'a>, Span<'a>, E>,
+// ) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, SyntaxNode<'a>, E>
+// where
+//     E: nom::error::ParseError<Span<'a>>,
+// {
+//     move |input: Span<'a>| {
+//         let (remaining, pos) = parser.parse(input)?;
+//         Ok((
+//             remaining,
+//             SyntaxNode {
+//                 pos,
+//                 kind,
+//                 children: vec![],
+//             },
+//         ))
+//     }
+// }
+
+pub fn syntax_node<'a, T, E>(
+    mut parser: impl Parser<Span<'a>, T, E>,
+) -> impl FnMut(Span<'a>) -> IResult<Span<'a>, SyntaxNode<T>, E>
+where
+    E: nom::error::ParseError<Span<'a>>,
+{
+    move |input: Span<'a>| {
+        let (s, result) = parser.parse(input)?;
+        let (s, pos) = position(s)?;
+        Ok((
+            s,
+            SyntaxNode {
+                range: Some(span_range(&pos)),
+                node: Some(result),
+            },
+        ))
+    }
+}
+
+// fn math_constants_node(input: Span) -> ParseResult<SyntaxNode> {
+//     syntax_node(SyntaxKind::LiteralMathConst, alt((tag("pi"), tag("tau")))).parse(input)
+// }
 
 fn math_constants(input: Span) -> ParseResult<Primitive> {
     alt((
@@ -113,7 +205,10 @@ fn integer(input: Span) -> ParseResult<i64> {
 fn numeric_primitive(input: Span) -> ParseResult<Primitive> {
     map(
         tuple((
-            opt(alt((char::<Span, error::Error<Span>>('+'), char('-')))),
+            opt(terminated(
+                alt((char::<Span, error::Error<Span>>('+'), char('-'))),
+                space0,
+            )),
             alt((
                 map(
                     tuple((integer, opt(recognize(pair(char('.'), opt(digit1)))))),
@@ -285,11 +380,13 @@ pub fn parse_expression(i: Span) -> ParseResult<Expr> {
     Ok((i, fold_exprs(initial, remainder)))
 }
 
+const KEYWORDS: &'static [&'static str] = &["let", "fn", "return", "play", "pause"];
+
 fn is_keyword(str: &str) -> bool {
-    str == "let" || str == "fn" || str == "return" || str == "play" || str == "pause"
+    KEYWORDS.contains(&str)
 }
 
-fn parse_identifier(input: Span) -> ParseResult<Identifier> {
+fn parse_identifier(input: Span) -> ParseResult<SyntaxNode<Identifier>> {
     map(
         verify(
             recognize(tuple((
@@ -298,19 +395,19 @@ fn parse_identifier(input: Span) -> ParseResult<Identifier> {
             ))),
             |span: &Span| !is_keyword(&span.to_string()),
         ),
-        |span: Span| Identifier(span.to_string()),
+        |span: Span| SyntaxNode::from((span.clone(), Identifier(span.to_string()))),
     )
     .parse(input)
 }
 
-fn parse_param(input: Span) -> ParseResult<Param> {
-    map(
+fn parse_param(input: Span) -> ParseResult<SyntaxNode<Param>> {
+    syntax_node(map(
         pair(
             opt(terminated(parse_identifier, multispace1)),
             parse_identifier,
         ),
         |(ty, name)| Param { ty, name },
-    )
+    ))
     .parse(input)
 }
 
@@ -406,7 +503,12 @@ pub fn parse_statement(input: Span) -> ParseResult<Stmt> {
                     expecting(tag(";"), "missing `;`"),
                 ))),
             ),
-            |(id, _, _, _, expr, _)| Stmt::Let((Expected(id), Expected(expr.map(Box::new)))),
+            |(id, _, _, _, expr, _)| {
+                Stmt::Let((
+                    id.unwrap_or(SyntaxNode::MISSING),
+                    Expected(expr.map(Box::new)),
+                ))
+            },
         ),
         map(parse_item, |item| Stmt::Item(Box::new(item))),
         map(
@@ -440,6 +542,8 @@ pub fn parse_document<'a>(input: impl Into<&'a str>) -> (Document, Vec<ParseErro
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches::assert_matches;
+
     use super::*;
 
     fn parse<'a, R, E>(
@@ -499,18 +603,45 @@ mod tests {
             parse(parse_primitive, "3.14!"),
             Some(("!", Primitive::Float(3.14), vec![]))
         );
-        assert_eq!(
-            parse(parse_primitive, "440hz!"),
-            Some(("!", Primitive::Quantity((440.0, "hz".into())), vec![]))
-        );
-        assert_eq!(
-            parse(parse_primitive, "40 khz!"),
-            Some(("!", Primitive::Quantity((40.0, "khz".into())), vec![]))
-        );
-        assert_eq!(
-            parse(parse_primitive, "-40 khz!"),
-            Some(("!", Primitive::Quantity((-40.0, "khz".into())), vec![]))
-        );
+
+        assert!(match parse(parse_primitive, "440hz!") {
+            Some((
+                "!",
+                Primitive::Quantity((
+                    freq,
+                    SyntaxNode {
+                        node: Some(Unit::Hz),
+                        ..
+                    },
+                )),
+                errs,
+            )) => {
+                assert_eq!(errs, vec![]);
+                assert_eq!(freq, 440.0);
+                true
+            }
+            _ => false,
+        });
+
+        assert!(match parse(parse_primitive, "- 41khz!") {
+            Some((
+                "!",
+                Primitive::Quantity((
+                    freq,
+                    SyntaxNode {
+                        node: Some(Unit::Khz),
+                        ..
+                    },
+                )),
+                errs,
+            )) => {
+                assert_eq!(errs, vec![]);
+                assert_eq!(freq, -41.0);
+                true
+            }
+            _ => false,
+        });
+
         assert_eq!(
             parse(parse_primitive, "40!"),
             Some(("!", Primitive::Int(40), vec![]))
@@ -1181,5 +1312,37 @@ let beat = trigger(60/bpm); // like square, except 0..1 instead of -1..1
 let beat = max(square(60/bpm), 0);
 
 pause sound @ beat;
+
+===
+
+A syntax node can be:
+
+    - Editable,
+      because compile-time evaluatable
+
+      ```
+      bezier(.46, .1, .77, .47)
+      ```
+
+      ```
+      let x = 0.46;
+
+      bezier(x, .1, .77, .47)
+      ```
+
+    - Visualizable, but not (fully) editable (if only for demonstration purposes),
+      because we enforce that all (or most?) parameters always have defaults
+
+        ...or do we want to fallback to editing the default value?
+
+      ```
+      let kick = |x = .46| {
+          sample * bezier(x, .1, .77, .47)
+      };
+      ```
+
+    - Not visualizable, because we have no (default) values for the variables involved,
+      I guess this will happen anyway, because otherwise we'd have to also
+      default things like patterns and samples etc, and that might be TOO HARD
 
 */

@@ -1,9 +1,73 @@
-use std::fmt::{self, Debug, Display, Formatter};
+use std::{
+    fmt::{self, Debug, Display, Formatter},
+    ops::Range,
+};
 
-#[derive(Clone, PartialEq, Eq, PartialOrd, Ord)]
+use crate::parse::{span_range, Span};
+
+#[derive(Clone, PartialEq, Eq)]
+pub struct SyntaxNode<T> {
+    pub range: Option<Range<usize>>,
+    pub node: Option<T>,
+}
+
+impl<T> SyntaxNode<T> {
+    pub const MISSING: SyntaxNode<T> = SyntaxNode {
+        range: None,
+        node: None,
+    };
+
+    pub fn map<F, U>(&self, f: F) -> SyntaxNode<U>
+    where
+        F: FnOnce(&T) -> U,
+    {
+        SyntaxNode {
+            range: self.range.clone(),
+            node: self.node.as_ref().map(f),
+        }
+    }
+}
+
+impl<'a, T> From<(Span<'a>, T)> for SyntaxNode<T> {
+    fn from((span, node): (Span<'a>, T)) -> Self {
+        Self {
+            range: Some(span_range(&span)),
+            node: Some(node),
+        }
+    }
+}
+
+impl<T> From<T> for SyntaxNode<T> {
+    fn from(node: T) -> Self {
+        Self {
+            range: None,
+            node: Some(node),
+        }
+    }
+}
+
+impl<T: Display> Display for SyntaxNode<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.node {
+            Some(node) => write!(f, "{}", node),
+            None => write!(f, "<MISSING>"),
+        }
+    }
+}
+
+impl<T: Debug> Debug for SyntaxNode<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        match &self.node {
+            Some(node) => write!(f, "{:?}", node),
+            None => write!(f, "<MISSING>"),
+        }
+    }
+}
+
+#[derive(Clone, PartialEq, Eq)]
 pub struct Expected<T>(pub Option<T>);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unit {
     Min,
     Ms,
@@ -12,16 +76,16 @@ pub enum Unit {
     Hz,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub enum Primitive {
     Bool(bool),
     Float(f64),
     Int(i64),
-    Quantity((f64, Unit)),
+    Quantity((f64, SyntaxNode<Unit>)),
     Str(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier(pub String);
 
 #[derive(Debug, Clone, Copy)]
@@ -32,60 +96,60 @@ pub enum Op {
     Div,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub enum Stmt {
     Skip,
     Expr(Box<Expr>),
-    Let((Expected<Identifier>, Expected<Box<Expr>>)),
+    Let((SyntaxNode<Identifier>, Expected<Box<Expr>>)),
     Return(Option<Box<Expr>>),
     Play(Expected<Box<Expr>>),
     Item(Box<Item>),
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub struct Param {
-    pub ty: Option<Identifier>,
-    pub name: Identifier,
+    pub ty: Option<SyntaxNode<Identifier>>,
+    pub name: SyntaxNode<Identifier>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
-pub struct ParamList(pub Vec<Param>);
+#[derive(Clone, PartialEq)]
+pub struct ParamList(pub Vec<SyntaxNode<Param>>);
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub struct FnDecl {
-    pub name: Identifier,
+    pub name: SyntaxNode<Identifier>,
     pub params: ParamList,
     pub body: Box<Block>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub struct AnonymousFn {
     pub params: ParamList,
     pub body: Box<Expr>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub enum Item {
     FnDecl(Box<FnDecl>),
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
     pub expr: Option<Box<Expr>>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub struct CallExpr {
-    pub id: Identifier,
+    pub id: SyntaxNode<Identifier>,
     pub args: Vec<Expr>,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub enum Expr {
     Prim(Primitive),
     Call(CallExpr),
-    Var(Identifier),
+    Var(SyntaxNode<Identifier>),
     Add(Box<Expr>, Box<Expr>),
     Sub(Box<Expr>, Box<Expr>),
     Mul(Box<Expr>, Box<Expr>),
@@ -97,7 +161,7 @@ pub enum Expr {
     Error,
 }
 
-#[derive(Clone, PartialEq, PartialOrd)]
+#[derive(Clone, PartialEq)]
 pub struct Document {
     pub stmts: Vec<Stmt>,
 }
@@ -141,9 +205,9 @@ impl Primitive {
 
     pub fn with_unit(self, unit: Unit) -> Self {
         match self {
-            Primitive::Float(f) => Primitive::Quantity((f, unit)),
-            Primitive::Int(d) => Primitive::Quantity((d as f64, unit)),
-            Primitive::Quantity((f, _)) => Primitive::Quantity((f, unit)),
+            Primitive::Float(f) => Primitive::Quantity((f, SyntaxNode::from(unit))),
+            Primitive::Int(d) => Primitive::Quantity((d as f64, SyntaxNode::from(unit))),
+            Primitive::Quantity((f, _)) => Primitive::Quantity((f, SyntaxNode::from(unit))),
             _ => self,
         }
     }
