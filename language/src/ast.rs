@@ -119,7 +119,7 @@ pub struct ParamList(pub Vec<SyntaxNode<Param>>);
 pub struct FnDecl {
     pub name: SyntaxNode<Identifier>,
     pub params: ParamList,
-    pub body: Box<Block>,
+    pub body: Box<SyntaxNode<Block>>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -139,6 +139,16 @@ pub struct Block {
     pub expr: Option<Box<Expr>>,
 }
 
+impl Block {
+    pub fn as_stmts_vec(mut self) -> Vec<Stmt> {
+        if let Some(expr) = self.expr.take() {
+            self.stmts.push(Stmt::Expr(expr));
+        }
+
+        self.stmts
+    }
+}
+
 #[derive(Clone, PartialEq)]
 pub struct CallExpr {
     pub id: SyntaxNode<Identifier>,
@@ -155,7 +165,7 @@ pub enum Expr {
     Mul(Box<Expr>, Box<Expr>),
     Div(Box<Expr>, Box<Expr>),
     Paren(Box<Expr>),
-    Block(Box<Block>),
+    Block(Box<SyntaxNode<Block>>),
     AnonymousFn(Box<AnonymousFn>),
 
     Error,
@@ -324,9 +334,7 @@ impl Display for CallExpr {
                 write!(f, ", ")?;
             }
         }
-        write!(f, ")")?;
-
-        Ok(())
+        write!(f, ")")
     }
 }
 
@@ -340,9 +348,7 @@ impl Debug for CallExpr {
                 write!(f, ", ")?;
             }
         }
-        write!(f, ")")?;
-
-        Ok(())
+        write!(f, ")")
     }
 }
 
@@ -413,9 +419,7 @@ impl Debug for Param {
         if let Some(ty) = &self.ty {
             write!(f, "{} ", ty)?;
         }
-        write!(f, "{}", self.name)?;
-
-        Ok(())
+        write!(f, "{}", self.name)
     }
 }
 
@@ -424,9 +428,7 @@ impl Display for Param {
         if let Some(ty) = &self.ty {
             write!(f, "{} ", ty)?;
         }
-        write!(f, "{}", self.name)?;
-
-        Ok(())
+        write!(f, "{}", self.name)
     }
 }
 
@@ -454,33 +456,25 @@ impl Display for ParamList {
 
 impl Debug for AnonymousFn {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "|{}| {:?}", self.params, self.body)?;
-
-        Ok(())
+        write!(f, "|{}| {:?}", self.params, self.body)
     }
 }
 
 impl Display for AnonymousFn {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "|{}| {}", self.params, self.body)?;
-
-        Ok(())
+        write!(f, "|{}| {}", self.params, self.body)
     }
 }
 
 impl Display for FnDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "fn {}({}) {}", self.name, self.params, self.body)?;
-
-        Ok(())
+        write!(f, "fn {}({}) {}", self.name, self.params, self.body)
     }
 }
 
 impl Debug for FnDecl {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "fn {}({}) {:?}", self.name, self.params, self.body)?;
-
-        Ok(())
+        write!(f, "fn {}({}) {:?}", self.name, self.params, self.body)
     }
 }
 

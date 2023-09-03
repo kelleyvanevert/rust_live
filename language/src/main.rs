@@ -1,4 +1,5 @@
 #![feature(assert_matches)]
+#![feature(let_chains)]
 
 use ast::Document;
 use check::check_document;
