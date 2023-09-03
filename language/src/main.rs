@@ -2,7 +2,7 @@
 
 use ast::Document;
 use check::check_document;
-use parse::parse_document;
+// use parse::parse_document;
 
 mod ast;
 mod check;
@@ -21,9 +21,9 @@ mod syntax;
 //     syntax_node(SyntaxKind::LiteralBool, tag("true")).parse(input)
 // }
 
-pub fn parse_and_check(code: &str) -> Document {
-    check_document(parse_document(code).0)
-}
+// pub fn parse_and_check(code: &str) -> Document {
+//     check_document(parse_document(code).0)
+// }
 
 fn main() {
     // println!(
