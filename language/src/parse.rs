@@ -53,13 +53,16 @@ pub fn span_range(span: &Span) -> Range<usize> {
 /// Evaluate `parser` and wrap the result in a `Some(_)`. Otherwise,
 /// emit the  provided `error_msg` and return a `None` while allowing
 /// parsing to continue.
-fn expecting<'a, F, E, T>(parser: F, error_msg: E) -> impl Fn(Span<'a>) -> ParseResult<Option<T>>
+fn expecting<'a, F, E, T>(
+    mut parser: F,
+    error_msg: E,
+) -> impl FnMut(Span<'a>) -> ParseResult<Option<T>>
 where
-    F: Fn(Span<'a>) -> ParseResult<T>,
+    F: FnMut(Span<'a>) -> ParseResult<T>,
     E: ToString,
 {
     move |input: Span| {
-        match parser(input) {
+        match parser.parse(input) {
             Ok((remaining, out)) => Ok((remaining, Some(out))),
             Err(nom::Err::Error(nom::error::Error { input, .. }))
             | Err(nom::Err::Failure(nom::error::Error { input, .. })) => {
@@ -455,15 +458,21 @@ fn p_declaration(input: Span) -> ParseResult<Decl> {
 fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
     alt((
         map(
-            preceded(pair(tag("return"), space0), cut(opt(p_expression))),
-            |expr| Stmt::Return(expr.map(Box::new)),
+            preceded(
+                pair(tag("return"), space0),
+                cut(opt(syntax_node(p_expression))),
+            ),
+            |expr| Stmt::Return(expr.map(|node| node.map(Box::new))),
         ),
         map(
             preceded(
                 pair(tag("play"), space0),
-                cut(expecting(p_expression, "missing play expression")),
+                cut(expecting(
+                    syntax_node(p_expression),
+                    "missing play expression",
+                )),
             ),
-            |expr| Stmt::Play(Expected(expr.map(Box::new))),
+            |expr| Stmt::Play(expr.unwrap_or(SyntaxNode::MISSING).map(Box::new)),
         ),
         map(
             preceded(
@@ -473,13 +482,13 @@ fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
                     multispace0,
                     expecting(tag("="), "missing `=`"),
                     multispace0,
-                    expecting(p_expression, "missing let expression"),
+                    expecting(syntax_node(p_expression), "missing let expression"),
                 ))),
             ),
             |(id, _, _, _, expr)| {
                 Stmt::Let((
                     id.unwrap_or(SyntaxNode::MISSING),
-                    Expected(expr.map(Box::new)),
+                    expr.unwrap_or(SyntaxNode::MISSING).map(Box::new),
                 ))
             },
         ),

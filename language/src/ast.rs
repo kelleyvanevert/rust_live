@@ -17,15 +17,25 @@ impl<T> SyntaxNode<T> {
         node: None,
     };
 
-    pub fn map<F, U>(&self, f: F) -> SyntaxNode<U>
+    pub fn map<F, U>(self, f: F) -> SyntaxNode<U>
     where
-        F: FnOnce(&T) -> U,
+        F: FnOnce(T) -> U,
     {
         SyntaxNode {
             range: self.range.clone(),
-            node: self.node.as_ref().map(f),
+            node: self.node.map(f),
         }
     }
+
+    // pub fn boxify(self) -> SyntaxNode<Box<T>> {
+    //     SyntaxNode {
+    //         range: self.range.clone(),
+    //         node: match self.node {
+    //             None => None,
+    //             Some(node) => Some(Box::new(node)),
+    //         },
+    //     }
+    // }
 }
 
 impl<'a, T> From<(Span<'a>, T)> for SyntaxNode<T> {
@@ -64,9 +74,6 @@ impl<T: Debug> Debug for SyntaxNode<T> {
     }
 }
 
-#[derive(Clone, PartialEq, Eq)]
-pub struct Expected<T>(pub Option<T>);
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unit {
     Min,
@@ -100,9 +107,9 @@ pub enum Op {
 pub enum Stmt {
     Skip,
     Expr(Box<Expr>),
-    Let((SyntaxNode<Identifier>, Expected<Box<Expr>>)),
-    Return(Option<Box<Expr>>),
-    Play(Expected<Box<Expr>>),
+    Let((SyntaxNode<Identifier>, SyntaxNode<Box<Expr>>)),
+    Return(Option<SyntaxNode<Box<Expr>>>),
+    Play(SyntaxNode<Box<Expr>>),
     Decl(Box<Decl>),
 }
 
@@ -265,24 +272,6 @@ impl Debug for Document {
         }
 
         Ok(())
-    }
-}
-
-impl<T: Display> Display for Expected<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Some(value) => write!(f, "{}", value),
-            None => write!(f, "<MISSING>"),
-        }
-    }
-}
-
-impl<T: Debug> Debug for Expected<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match &self.0 {
-            Some(value) => write!(f, "{:?}", value),
-            None => write!(f, "<MISSING>"),
-        }
     }
 }
 
