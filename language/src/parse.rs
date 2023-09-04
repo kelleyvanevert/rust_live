@@ -329,30 +329,11 @@ fn fold_exprs(
     initial: SyntaxNode<Expr>,
     remainder: Vec<(Op, SyntaxNode<Expr>)>,
 ) -> SyntaxNode<Expr> {
-    remainder.into_iter().fold(initial, |acc, pair| {
-        let (oper, expr) = pair;
-        match oper {
-            Op::Add => (
-                cover_ranges(acc.range(), expr.range()),
-                Expr::Add(acc, expr),
-            )
-                .into(),
-            Op::Sub => (
-                cover_ranges(acc.range(), expr.range()),
-                Expr::Sub(acc, expr),
-            )
-                .into(),
-            Op::Mul => (
-                cover_ranges(acc.range(), expr.range()),
-                Expr::Mul(acc, expr),
-            )
-                .into(),
-            Op::Div => (
-                cover_ranges(acc.range(), expr.range()),
-                Expr::Div(acc, expr),
-            )
-                .into(),
-        }
+    remainder.into_iter().fold(initial, |acc, (op, expr)| {
+        SyntaxNode::new(
+            cover_ranges(acc.range(), expr.range()),
+            Some(Expr::BinOp(acc, op, expr)),
+        )
     })
 }
 
@@ -924,7 +905,7 @@ mod tests {
         assert_eq!(p.range(), Some(0..6));
         assert!(match p {
             SyntaxNode {
-                node: Some(box Expr::Add(a, b)),
+                node: Some(box Expr::BinOp(a, Op::Add, b)),
                 ..
             } => {
                 assert_eq!(a.range(), Some(0..1));
@@ -942,20 +923,20 @@ mod tests {
         assert_eq!(format!("{:?}", p), "((4 + (12 * 13)) + 1)");
         assert!(match p {
             SyntaxNode {
-                node: Some(box Expr::Add(a, b)),
+                node: Some(box Expr::BinOp(a, Op::Add, b)),
                 ..
             } => {
                 assert_eq!(a.range(), Some(0..11));
                 assert!(match a {
                     SyntaxNode {
-                        node: Some(box Expr::Add(a, b)),
+                        node: Some(box Expr::BinOp(a, Op::Add, b)),
                         ..
                     } => {
                         assert_eq!(a.range(), Some(0..1));
                         assert_eq!(b.range(), Some(4..11));
                         assert!(match b {
                             SyntaxNode {
-                                node: Some(box Expr::Mul(a, b)),
+                                node: Some(box Expr::BinOp(a, Op::Mul, b)),
                                 ..
                             } => {
                                 assert_eq!(a.range(), Some(4..6));

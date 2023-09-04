@@ -135,7 +135,7 @@ pub enum Primitive {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Identifier(pub String);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum Op {
     Add,
     Sub,
@@ -207,10 +207,7 @@ pub enum Expr {
     Prim(SyntaxNode<Primitive>),
     Call(CallExpr),
     Var(SyntaxNode<Identifier>),
-    Add(SyntaxNode<Expr>, SyntaxNode<Expr>),
-    Sub(SyntaxNode<Expr>, SyntaxNode<Expr>),
-    Mul(SyntaxNode<Expr>, SyntaxNode<Expr>),
-    Div(SyntaxNode<Expr>, SyntaxNode<Expr>),
+    BinOp(SyntaxNode<Expr>, Op, SyntaxNode<Expr>),
     Paren(SyntaxNode<Expr>),
     Block(SyntaxNode<Block>),
     AnonymousFn(SyntaxNode<AnonymousFn>),
@@ -329,10 +326,7 @@ impl Display for Expr {
             Prim(val) => write!(f, "{}", val),
             Call(call) => write!(f, "{}", call),
             Var(id) => write!(f, "{}", id),
-            Add(left, right) => write!(f, "{} + {}", left, right),
-            Sub(left, right) => write!(f, "{} - {}", left, right),
-            Mul(left, right) => write!(f, "{} * {}", left, right),
-            Div(left, right) => write!(f, "{} / {}", left, right),
+            BinOp(left, op, right) => write!(f, "{} {} {}", left, op, right),
             Paren(expr) => write!(f, "({})", expr),
             Block(block) => write!(f, "{}", block),
             AnonymousFn(fun) => write!(f, "{}", fun),
@@ -347,10 +341,7 @@ impl Debug for Expr {
             Prim(val) => write!(f, "{}", val),
             Call(call) => write!(f, "{}", call),
             Var(id) => write!(f, "{}", id),
-            Add(left, right) => write!(f, "({:?} + {:?})", left, right),
-            Sub(left, right) => write!(f, "({:?} - {:?})", left, right),
-            Mul(left, right) => write!(f, "({:?} * {:?})", left, right),
-            Div(left, right) => write!(f, "({:?} / {:?})", left, right),
+            BinOp(left, op, right) => write!(f, "({:?} {} {:?})", left, op, right),
             Paren(expr) => write!(f, "({:?})", expr),
             Block(block) => write!(f, "{:?}", block),
             AnonymousFn(fun) => write!(f, "{:?}", fun),
@@ -383,6 +374,30 @@ impl Debug for CallExpr {
             }
         }
         write!(f, ")")
+    }
+}
+
+impl Display for Op {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use Op::*;
+        match self {
+            Add => write!(f, "+"),
+            Sub => write!(f, "-"),
+            Mul => write!(f, "*"),
+            Div => write!(f, "/"),
+        }
+    }
+}
+
+impl Debug for Op {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        use Op::*;
+        match self {
+            Add => write!(f, "+"),
+            Sub => write!(f, "-"),
+            Mul => write!(f, "*"),
+            Div => write!(f, "/"),
+        }
     }
 }
 
