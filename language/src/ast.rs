@@ -49,6 +49,10 @@ impl<T> SyntaxNode<T> {
     // }
 }
 
+// pub trait Node {
+//     // fn children(&self) -> Vec<dyn Syntax>
+// }
+
 pub fn cover_ranges(a: Option<Range<usize>>, b: Option<Range<usize>>) -> Option<Range<usize>> {
     match (a, b) {
         (None, None) => None,
@@ -146,7 +150,7 @@ pub enum Stmt {
     Let((SyntaxNode<Identifier>, SyntaxNode<Expr>)),
     Return(Option<SyntaxNode<Expr>>),
     Play(SyntaxNode<Expr>),
-    Decl(Box<Decl>),
+    Decl(SyntaxNode<Decl>),
 }
 
 #[derive(Clone, PartialEq)]
@@ -173,7 +177,7 @@ pub struct AnonymousFn {
 
 #[derive(Clone, PartialEq)]
 pub enum Decl {
-    FnDecl(Box<FnDecl>),
+    FnDecl(SyntaxNode<FnDecl>),
 }
 
 #[derive(Clone, PartialEq)]
@@ -209,9 +213,7 @@ pub enum Expr {
     Div(SyntaxNode<Expr>, SyntaxNode<Expr>),
     Paren(SyntaxNode<Expr>),
     Block(SyntaxNode<Block>),
-    AnonymousFn(Box<AnonymousFn>),
-
-    Error,
+    AnonymousFn(SyntaxNode<AnonymousFn>),
 }
 
 // impl GetChildRanges for Expr {
@@ -334,7 +336,6 @@ impl Display for Expr {
             Paren(expr) => write!(f, "({})", expr),
             Block(block) => write!(f, "{}", block),
             AnonymousFn(fun) => write!(f, "{}", fun),
-            Error => write!(f, "<ERR>"),
         }
     }
 }
@@ -353,7 +354,6 @@ impl Debug for Expr {
             Paren(expr) => write!(f, "({:?})", expr),
             Block(block) => write!(f, "{:?}", block),
             AnonymousFn(fun) => write!(f, "{:?}", fun),
-            Error => write!(f, "<ERR>"),
         }
     }
 }

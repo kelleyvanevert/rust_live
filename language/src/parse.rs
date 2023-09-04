@@ -209,7 +209,7 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
     #[derive(Debug)]
     enum Item {
         Stmt(Stmt),
-        Decl(Decl),
+        Decl(SyntaxNode<Decl>),
         Expr(SyntaxNode<Expr>),
         Ws,
         Semi,
@@ -250,7 +250,7 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
                         block.expr = Some(expr);
                     }
                     Item::Decl(decl) => {
-                        block.stmts.push(Stmt::Decl(Box::new(decl)));
+                        block.stmts.push(Stmt::Decl(decl));
                     }
                     Item::Semi => {
                         if let Some(expr) = block.expr.take() {
@@ -318,9 +318,7 @@ fn p_factor(i: Span) -> ParseResult<SyntaxNode<Expr>> {
             syntax_node(map(p_primitive, Expr::Prim)),
             p_parenthesized_expr,
             syntax_node(map(p_block, |block| Expr::Block(block))),
-            syntax_node(map(p_anonymous_function, |fun| {
-                Expr::AnonymousFn(Box::new(fun))
-            })),
+            syntax_node(map(p_anonymous_function, |fun| Expr::AnonymousFn(fun))),
         )),
         multispace0,
     )
@@ -420,8 +418,8 @@ fn p_param(input: Span) -> ParseResult<SyntaxNode<Param>> {
     .parse(input)
 }
 
-fn p_anonymous_function(input: Span) -> ParseResult<AnonymousFn> {
-    map(
+fn p_anonymous_function(input: Span) -> ParseResult<SyntaxNode<AnonymousFn>> {
+    syntax_node(map(
         preceded(
             pair(tag("|"), space0),
             cut(tuple((
@@ -436,12 +434,12 @@ fn p_anonymous_function(input: Span) -> ParseResult<AnonymousFn> {
             params: ParamList(params),
             body: body.unwrap_or(SyntaxNode::MISSING),
         },
-    )
+    ))
     .parse(input)
 }
 
-fn p_function_declaration(input: Span) -> ParseResult<FnDecl> {
-    map(
+fn p_function_declaration(input: Span) -> ParseResult<SyntaxNode<FnDecl>> {
+    syntax_node(map(
         preceded(
             pair(tag("fn"), space0),
             cut(tuple((
@@ -463,17 +461,15 @@ fn p_function_declaration(input: Span) -> ParseResult<FnDecl> {
             params: ParamList(params),
             body: body.unwrap_or(SyntaxNode::MISSING),
         },
-    )
+    ))
     .parse(input)
 }
 
-fn p_declaration(input: Span) -> ParseResult<Decl> {
-    alt((
-        map(p_function_declaration, |fndecl| {
-            Decl::FnDecl(Box::new(fndecl))
-        }),
+fn p_declaration(input: Span) -> ParseResult<SyntaxNode<Decl>> {
+    syntax_node(alt((
+        map(p_function_declaration, |fndecl| Decl::FnDecl(fndecl)),
         // others to come..
-    ))
+    )))
     .parse(input)
 }
 
@@ -516,7 +512,7 @@ fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
 fn p_statement_complete(input: Span) -> ParseResult<Stmt> {
     alt((
         terminated(p_statement_bare, expecting(tag(";"), "missing `;`")),
-        map(p_declaration, |decl| Stmt::Decl(Box::new(decl))),
+        map(p_declaration, |decl| Stmt::Decl(decl)),
         map(
             terminated(p_expression, expecting(tag(";"), "missing `;`")),
             |expr| Stmt::Expr(expr),
