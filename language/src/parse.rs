@@ -200,7 +200,7 @@ fn p_parenthesized_expr(i: Span) -> ParseResult<SyntaxNode<Expr>> {
             expecting(p_expression, "expected expression after `(`"),
             expecting(tag(")"), "missing `)`"),
         ),
-        |inner| Expr::Paren(inner.unwrap_or(SyntaxNode::MISSING).map(Box::new)),
+        |inner| Expr::Paren(inner.unwrap_or(SyntaxNode::MISSING)),
     ))
     .parse(i)
 }
@@ -247,7 +247,7 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
                         missing_stmt_semi = true;
                     }
                     Item::Expr(expr) => {
-                        block.expr = Some(expr.map(Box::new));
+                        block.expr = Some(expr);
                     }
                     Item::Decl(decl) => {
                         block.stmts.push(Stmt::Decl(Box::new(decl)));
@@ -317,7 +317,7 @@ fn p_factor(i: Span) -> ParseResult<SyntaxNode<Expr>> {
             p_access_or_call,
             syntax_node(map(p_primitive, Expr::Prim)),
             p_parenthesized_expr,
-            syntax_node(map(p_block, |block| Expr::Block(block.map(Box::new)))),
+            syntax_node(map(p_block, |block| Expr::Block(block))),
             syntax_node(map(p_anonymous_function, |fun| {
                 Expr::AnonymousFn(Box::new(fun))
             })),
@@ -336,22 +336,22 @@ fn fold_exprs(
         match oper {
             Op::Add => (
                 cover_ranges(acc.range(), expr.range()),
-                Expr::Add(acc.map(Box::new), expr.map(Box::new)),
+                Expr::Add(acc, expr),
             )
                 .into(),
             Op::Sub => (
                 cover_ranges(acc.range(), expr.range()),
-                Expr::Sub(acc.map(Box::new), expr.map(Box::new)),
+                Expr::Sub(acc, expr),
             )
                 .into(),
             Op::Mul => (
                 cover_ranges(acc.range(), expr.range()),
-                Expr::Mul(acc.map(Box::new), expr.map(Box::new)),
+                Expr::Mul(acc, expr),
             )
                 .into(),
             Op::Div => (
                 cover_ranges(acc.range(), expr.range()),
-                Expr::Div(acc.map(Box::new), expr.map(Box::new)),
+                Expr::Div(acc, expr),
             )
                 .into(),
         }
@@ -434,7 +434,7 @@ fn p_anonymous_function(input: Span) -> ParseResult<AnonymousFn> {
         ),
         |(params, _, _, _, body)| AnonymousFn {
             params: ParamList(params),
-            body: body.unwrap_or(SyntaxNode::MISSING).map(Box::new),
+            body: body.unwrap_or(SyntaxNode::MISSING),
         },
     )
     .parse(input)
@@ -461,7 +461,7 @@ fn p_function_declaration(input: Span) -> ParseResult<FnDecl> {
         |(name, _, _, _, params, _, _, _, _, _, body)| FnDecl {
             name: name.unwrap_or(SyntaxNode::MISSING),
             params: ParamList(params),
-            body: body.unwrap_or(SyntaxNode::MISSING).map(Box::new),
+            body: body.unwrap_or(SyntaxNode::MISSING),
         },
     )
     .parse(input)
@@ -482,14 +482,14 @@ fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
     alt((
         map(
             preceded(pair(tag("return"), space0), cut(opt(p_expression))),
-            |expr| Stmt::Return(expr.map(|node| node.map(Box::new))),
+            |expr| Stmt::Return(expr.map(|node| node)),
         ),
         map(
             preceded(
                 pair(tag("play"), space0),
                 cut(expecting(p_expression, "missing play expression")),
             ),
-            |expr| Stmt::Play(expr.unwrap_or(SyntaxNode::MISSING).map(Box::new)),
+            |expr| Stmt::Play(expr.unwrap_or(SyntaxNode::MISSING)),
         ),
         map(
             preceded(
@@ -505,7 +505,7 @@ fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
             |(id, _, _, _, expr)| {
                 Stmt::Let((
                     id.unwrap_or(SyntaxNode::MISSING),
-                    expr.unwrap_or(SyntaxNode::MISSING).map(Box::new),
+                    expr.unwrap_or(SyntaxNode::MISSING),
                 ))
             },
         ),
@@ -519,7 +519,7 @@ fn p_statement_complete(input: Span) -> ParseResult<Stmt> {
         map(p_declaration, |decl| Stmt::Decl(Box::new(decl))),
         map(
             terminated(p_expression, expecting(tag(";"), "missing `;`")),
-            |expr| Stmt::Expr(expr.map(Box::new)),
+            |expr| Stmt::Expr(expr),
         ),
     ))
     .parse(input)
@@ -928,7 +928,7 @@ mod tests {
         assert_eq!(p.range(), Some(0..6));
         assert!(match p {
             SyntaxNode {
-                node: Some(Expr::Add(a, b)),
+                node: Some(box Expr::Add(a, b)),
                 ..
             } => {
                 assert_eq!(a.range(), Some(0..1));
@@ -946,20 +946,20 @@ mod tests {
         assert_eq!(format!("{:?}", p), "((4 + (12 * 13)) + 1)");
         assert!(match p {
             SyntaxNode {
-                node: Some(Expr::Add(a, b)),
+                node: Some(box Expr::Add(a, b)),
                 ..
             } => {
                 assert_eq!(a.range(), Some(0..11));
-                assert!(match a.map(|n| *n) {
+                assert!(match a {
                     SyntaxNode {
-                        node: Some(Expr::Add(a, b)),
+                        node: Some(box Expr::Add(a, b)),
                         ..
                     } => {
                         assert_eq!(a.range(), Some(0..1));
                         assert_eq!(b.range(), Some(4..11));
-                        assert!(match b.map(|n| *n) {
+                        assert!(match b {
                             SyntaxNode {
-                                node: Some(Expr::Mul(a, b)),
+                                node: Some(box Expr::Mul(a, b)),
                                 ..
                             } => {
                                 assert_eq!(a.range(), Some(4..6));

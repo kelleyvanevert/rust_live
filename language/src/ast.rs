@@ -8,7 +8,7 @@ use crate::parse::{span_range, Span};
 #[derive(Clone, PartialEq, Eq)]
 pub struct SyntaxNode<T> {
     range: Option<Range<usize>>,
-    pub node: Option<T>,
+    pub node: Option<Box<T>>,
 }
 
 impl<T> SyntaxNode<T> {
@@ -18,7 +18,10 @@ impl<T> SyntaxNode<T> {
     };
 
     pub fn new(range: Option<Range<usize>>, node: Option<T>) -> Self {
-        Self { range, node }
+        Self {
+            range,
+            node: node.map(Box::new),
+        }
     }
 
     pub fn map<F, U>(self, f: F) -> SyntaxNode<U>
@@ -27,7 +30,7 @@ impl<T> SyntaxNode<T> {
     {
         SyntaxNode {
             range: self.range.clone(),
-            node: self.node.map(f),
+            node: self.node.map(|box x| f(x)).map(Box::new),
         }
     }
 
@@ -62,7 +65,7 @@ impl<'a, T> From<(Option<Range<usize>>, T)> for SyntaxNode<T> {
     fn from((range, node): (Option<Range<usize>>, T)) -> Self {
         Self {
             range,
-            node: Some(node),
+            node: Some(Box::new(node)),
         }
     }
 }
@@ -71,7 +74,7 @@ impl<'a, T> From<(Span<'a>, T)> for SyntaxNode<T> {
     fn from((span, node): (Span<'a>, T)) -> Self {
         Self {
             range: Some(span_range(&span)),
-            node: Some(node),
+            node: Some(Box::new(node)),
         }
     }
 }
@@ -80,7 +83,7 @@ impl<T> From<T> for SyntaxNode<T> {
     fn from(node: T) -> Self {
         Self {
             range: None,
-            node: Some(node),
+            node: Some(Box::new(node)),
         }
     }
 }
@@ -139,10 +142,10 @@ pub enum Op {
 #[derive(Clone, PartialEq)]
 pub enum Stmt {
     Skip,
-    Expr(SyntaxNode<Box<Expr>>),
-    Let((SyntaxNode<Identifier>, SyntaxNode<Box<Expr>>)),
-    Return(Option<SyntaxNode<Box<Expr>>>),
-    Play(SyntaxNode<Box<Expr>>),
+    Expr(SyntaxNode<Expr>),
+    Let((SyntaxNode<Identifier>, SyntaxNode<Expr>)),
+    Return(Option<SyntaxNode<Expr>>),
+    Play(SyntaxNode<Expr>),
     Decl(Box<Decl>),
 }
 
@@ -159,13 +162,13 @@ pub struct ParamList(pub Vec<SyntaxNode<Param>>);
 pub struct FnDecl {
     pub name: SyntaxNode<Identifier>,
     pub params: ParamList,
-    pub body: SyntaxNode<Box<Block>>,
+    pub body: SyntaxNode<Block>,
 }
 
 #[derive(Clone, PartialEq)]
 pub struct AnonymousFn {
     pub params: ParamList,
-    pub body: SyntaxNode<Box<Expr>>,
+    pub body: SyntaxNode<Expr>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -176,7 +179,7 @@ pub enum Decl {
 #[derive(Clone, PartialEq)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
-    pub expr: Option<SyntaxNode<Box<Expr>>>,
+    pub expr: Option<SyntaxNode<Expr>>,
 }
 
 impl Block {
@@ -200,12 +203,12 @@ pub enum Expr {
     Prim(SyntaxNode<Primitive>),
     Call(CallExpr),
     Var(SyntaxNode<Identifier>),
-    Add(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
-    Sub(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
-    Mul(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
-    Div(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
-    Paren(SyntaxNode<Box<Expr>>),
-    Block(SyntaxNode<Box<Block>>),
+    Add(SyntaxNode<Expr>, SyntaxNode<Expr>),
+    Sub(SyntaxNode<Expr>, SyntaxNode<Expr>),
+    Mul(SyntaxNode<Expr>, SyntaxNode<Expr>),
+    Div(SyntaxNode<Expr>, SyntaxNode<Expr>),
+    Paren(SyntaxNode<Expr>),
+    Block(SyntaxNode<Block>),
     AnonymousFn(Box<AnonymousFn>),
 
     Error,

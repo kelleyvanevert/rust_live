@@ -1,5 +1,6 @@
 #![feature(assert_matches)]
 #![feature(let_chains)]
+#![feature(box_patterns)]
 
 use ast::Document;
 use check::check_document;
