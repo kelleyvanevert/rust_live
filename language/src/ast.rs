@@ -7,7 +7,7 @@ use crate::parse::{span_range, Span};
 
 #[derive(Clone, PartialEq, Eq)]
 pub struct SyntaxNode<T> {
-    pub range: Option<Range<usize>>,
+    range: Option<Range<usize>>,
     pub node: Option<T>,
 }
 
@@ -16,6 +16,10 @@ impl<T> SyntaxNode<T> {
         range: None,
         node: None,
     };
+
+    pub fn new(range: Option<Range<usize>>, node: Option<T>) -> Self {
+        Self { range, node }
+    }
 
     pub fn map<F, U>(self, f: F) -> SyntaxNode<U>
     where
@@ -27,6 +31,10 @@ impl<T> SyntaxNode<T> {
         }
     }
 
+    pub fn range(&self) -> Option<Range<usize>> {
+        self.range.clone()
+    }
+
     // pub fn boxify(self) -> SyntaxNode<Box<T>> {
     //     SyntaxNode {
     //         range: self.range.clone(),
@@ -36,6 +44,27 @@ impl<T> SyntaxNode<T> {
     //         },
     //     }
     // }
+}
+
+pub fn cover_ranges(a: Option<Range<usize>>, b: Option<Range<usize>>) -> Option<Range<usize>> {
+    match (a, b) {
+        (None, None) => None,
+        (Some(a), None) => Some(a),
+        (None, Some(b)) => Some(b),
+        (Some(a), Some(b)) => Some(Range {
+            start: a.start.min(b.start),
+            end: a.end.max(b.end),
+        }),
+    }
+}
+
+impl<'a, T> From<(Option<Range<usize>>, T)> for SyntaxNode<T> {
+    fn from((range, node): (Option<Range<usize>>, T)) -> Self {
+        Self {
+            range,
+            node: Some(node),
+        }
+    }
 }
 
 impl<'a, T> From<(Span<'a>, T)> for SyntaxNode<T> {
@@ -74,6 +103,10 @@ impl<T: Debug> Debug for SyntaxNode<T> {
     }
 }
 
+// trait GetChildRanges {
+//     fn child_ranges(&self) -> Vec<Range<usize>>;
+// }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Unit {
     Min,
@@ -106,7 +139,7 @@ pub enum Op {
 #[derive(Clone, PartialEq)]
 pub enum Stmt {
     Skip,
-    Expr(Box<Expr>),
+    Expr(SyntaxNode<Box<Expr>>),
     Let((SyntaxNode<Identifier>, SyntaxNode<Box<Expr>>)),
     Return(Option<SyntaxNode<Box<Expr>>>),
     Play(SyntaxNode<Box<Expr>>),
@@ -126,13 +159,13 @@ pub struct ParamList(pub Vec<SyntaxNode<Param>>);
 pub struct FnDecl {
     pub name: SyntaxNode<Identifier>,
     pub params: ParamList,
-    pub body: Box<SyntaxNode<Block>>,
+    pub body: SyntaxNode<Box<Block>>,
 }
 
 #[derive(Clone, PartialEq)]
 pub struct AnonymousFn {
     pub params: ParamList,
-    pub body: Box<Expr>,
+    pub body: SyntaxNode<Box<Expr>>,
 }
 
 #[derive(Clone, PartialEq)]
@@ -143,7 +176,7 @@ pub enum Decl {
 #[derive(Clone, PartialEq)]
 pub struct Block {
     pub stmts: Vec<Stmt>,
-    pub expr: Option<Box<Expr>>,
+    pub expr: Option<SyntaxNode<Box<Expr>>>,
 }
 
 impl Block {
@@ -159,24 +192,33 @@ impl Block {
 #[derive(Clone, PartialEq)]
 pub struct CallExpr {
     pub id: SyntaxNode<Identifier>,
-    pub args: Vec<Expr>,
+    pub args: Vec<SyntaxNode<Expr>>,
 }
 
 #[derive(Clone, PartialEq)]
 pub enum Expr {
-    Prim(Primitive),
+    Prim(SyntaxNode<Primitive>),
     Call(CallExpr),
     Var(SyntaxNode<Identifier>),
-    Add(Box<Expr>, Box<Expr>),
-    Sub(Box<Expr>, Box<Expr>),
-    Mul(Box<Expr>, Box<Expr>),
-    Div(Box<Expr>, Box<Expr>),
-    Paren(Box<Expr>),
-    Block(Box<SyntaxNode<Block>>),
+    Add(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
+    Sub(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
+    Mul(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
+    Div(SyntaxNode<Box<Expr>>, SyntaxNode<Box<Expr>>),
+    Paren(SyntaxNode<Box<Expr>>),
+    Block(SyntaxNode<Box<Block>>),
     AnonymousFn(Box<AnonymousFn>),
 
     Error,
 }
+
+// impl GetChildRanges for Expr {
+//     fn child_ranges(&self) -> Vec<Range<usize>> {
+//         match self {
+//             Expr::Prim(node) => std::iter::once(node.range()).filter_map(|n| n).collect(),
+//             _ => vec![],
+//         }
+//     }
+// }
 
 #[derive(Clone, PartialEq)]
 pub struct Document {
