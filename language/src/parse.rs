@@ -11,9 +11,9 @@ use nom::{
     branch::*,
     bytes::complete::*,
     character::complete::{char, *},
-    combinator::{cut, eof, map, opt, recognize, value, verify},
+    combinator::{cut, map, opt, recognize, value, verify},
     error,
-    multi::{fold_many0, many0, many1, separated_list0},
+    multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated, tuple},
     IResult, Parser,
 };
@@ -204,6 +204,7 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
     #[derive(Debug)]
     enum Item {
         Stmt(Stmt),
+        Decl(Decl),
         Expr(Expr),
         Ws,
         Semi,
@@ -211,6 +212,7 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
 
     let mut item = alt((
         map(p_statement_bare, |stmt| Item::Stmt(stmt)),
+        map(p_declaration, |decl| Item::Decl(decl)),
         map(p_expression, |expr| Item::Expr(expr)),
         map(tag(";"), |_| Item::Semi),
         map(multispace1, |_| Item::Ws),
@@ -221,26 +223,35 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
         expr: None,
     };
 
+    let mut missing_stmt_semi = false;
+
     loop {
         match item.parse(input.clone()) {
             Ok((rem, item)) => {
-                if matches!(item, Item::Stmt(_) | Item::Expr(_)) && let Some(expr) = block.expr.take() {
+                if matches!(item, Item::Stmt(_) | Item::Expr(_) | Item::Decl(_))
+                    && let Some(expr) = block.expr.take() {
                     let err = ParseError(span_range(&rem), "missing `;`".into());
                     rem.extra.report_error(err);
+                    missing_stmt_semi = false;
                     block.stmts.push(Stmt::Expr(expr));
                 }
 
                 match item {
                     Item::Stmt(stmt) => {
                         block.stmts.push(stmt);
+                        missing_stmt_semi = true;
                     }
                     Item::Expr(expr) => {
                         block.expr = Some(Box::new(expr));
+                    }
+                    Item::Decl(decl) => {
+                        block.stmts.push(Stmt::Decl(Box::new(decl)));
                     }
                     Item::Semi => {
                         if let Some(expr) = block.expr.take() {
                             block.stmts.push(Stmt::Expr(expr))
                         }
+                        missing_stmt_semi = false;
                     }
                     _ => {}
                 }
@@ -248,6 +259,10 @@ fn p_block_inner(mut input: Span) -> ParseResult<Block> {
                 input = rem;
             }
             Err(nom::Err::Error(_)) => {
+                if missing_stmt_semi {
+                    let err = ParseError(span_range(&input), "missing `;`".into());
+                    input.extra.report_error(err);
+                }
                 return Ok((input, block));
             }
             // TODO - is this necessary?
@@ -402,7 +417,7 @@ fn p_anonymous_function(input: Span) -> ParseResult<AnonymousFn> {
 fn p_function_declaration(input: Span) -> ParseResult<FnDecl> {
     map(
         preceded(
-            pair(tag("fn"), space1),
+            pair(tag("fn"), space0),
             cut(tuple((
                 expecting(p_identifier, "expected function name"),
                 multispace0,
@@ -426,17 +441,17 @@ fn p_function_declaration(input: Span) -> ParseResult<FnDecl> {
     .parse(input)
 }
 
-fn p_item(input: Span) -> ParseResult<Item> {
+fn p_declaration(input: Span) -> ParseResult<Decl> {
     alt((
         map(p_function_declaration, |fndecl| {
-            Item::FnDecl(Box::new(fndecl))
+            Decl::FnDecl(Box::new(fndecl))
         }),
         // others to come..
     ))
     .parse(input)
 }
 
-/// Parses an expression, but WITHOUT the delimiting semicolon, and NOT INCLUDING an expression statement
+/// Parses an expression, but WITHOUT the delimiting semicolon, and NOT INCLUDING an expression statement or declaration statement
 fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
     alt((
         map(
@@ -452,7 +467,7 @@ fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
         ),
         map(
             preceded(
-                pair(tag("let"), space1),
+                pair(tag("let"), space0),
                 cut(tuple((
                     expecting(p_identifier, "missing let identifier"),
                     multispace0,
@@ -468,19 +483,19 @@ fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
                 ))
             },
         ),
-        map(p_item, |item| Stmt::Item(Box::new(item))),
     ))
     .parse(input)
 }
 
 fn p_statement_complete(input: Span) -> ParseResult<Stmt> {
-    terminated(
-        alt((
-            p_statement_bare,
-            map(p_expression, |expr| Stmt::Expr(Box::new(expr))),
-        )),
-        expecting(tag(";"), "missing `;`"),
-    )
+    alt((
+        terminated(p_statement_bare, expecting(tag(";"), "missing `;`")),
+        map(p_declaration, |decl| Stmt::Decl(Box::new(decl))),
+        map(
+            terminated(p_expression, expecting(tag(";"), "missing `;`")),
+            |expr| Stmt::Expr(Box::new(expr)),
+        ),
+    ))
     .parse(input)
 }
 
@@ -893,14 +908,14 @@ mod tests {
             vec![],
         );
         test_parse(
-            map(p_statement_bare, debug),
+            map(p_declaration, debug),
             "fn add( int x, wave bla) { 5 }?",
             "?",
             "fn add(int x, wave bla) { 5 }".into(),
             vec![],
         );
         test_parse(
-            map(p_statement_bare, debug),
+            map(p_declaration, debug),
             "fn add( int x, wave bla, ) { 5 }?",
             "?",
             "fn add(int x, wave bla) { 5 }".into(),
@@ -916,7 +931,7 @@ mod tests {
         );
 
         test_parse(
-            map(p_item, debug),
+            map(p_declaration, debug),
             "fn () { 5",
             "",
             "fn <MISSING>() { 5 }".into(),
@@ -924,7 +939,7 @@ mod tests {
         );
 
         test_parse(
-            map(p_item, debug),
+            map(p_declaration, debug),
             "fn ( { 5 let h = 6",
             "",
             "fn <MISSING>() { 5; let h = 6; }".into(),
@@ -932,12 +947,13 @@ mod tests {
                 "expected function name",
                 "expected function parameters closing `)`",
                 "missing `;`",
+                "missing `;`",
                 "missing `}`",
             ],
         );
 
         test_parse(
-            map(p_item, debug),
+            map(p_declaration, debug),
             "fn { 5; let h = 6",
             "",
             "fn <MISSING>() { 5; let h = 6; }".into(),
@@ -945,6 +961,69 @@ mod tests {
                 "expected function name",
                 "expected function parameters opening `(`",
                 "expected function parameters closing `)`",
+                "missing `;`",
+                "missing `}`",
+            ],
+        );
+
+        test_parse(
+            map(p_declaration, debug),
+            "fn",
+            "",
+            "fn <MISSING>() <MISSING>".into(),
+            vec![
+                "expected function name",
+                "expected function parameters opening `(`",
+                "expected function parameters closing `)`",
+                "expected function body",
+            ],
+        );
+
+        test_parse(
+            map(p_declaration, debug),
+            "fn;",
+            ";",
+            "fn <MISSING>() <MISSING>".into(),
+            vec![
+                "expected function name",
+                "expected function parameters opening `(`",
+                "expected function parameters closing `)`",
+                "expected function body",
+            ],
+        );
+
+        test_parse(
+            map(p_declaration, debug),
+            "fn);",
+            ";",
+            "fn <MISSING>() <MISSING>".into(),
+            vec![
+                "expected function name",
+                "expected function parameters opening `(`",
+                "expected function body",
+            ],
+        );
+
+        test_parse(
+            map(p_declaration, debug),
+            "fn)};",
+            "};",
+            "fn <MISSING>() <MISSING>".into(),
+            vec![
+                "expected function name",
+                "expected function parameters opening `(`",
+                "expected function body",
+            ],
+        );
+
+        test_parse(
+            map(p_declaration, debug),
+            "fn){;",
+            "",
+            "fn <MISSING>() { }".into(),
+            vec![
+                "expected function name",
+                "expected function parameters opening `(`",
                 "missing `}`",
             ],
         );

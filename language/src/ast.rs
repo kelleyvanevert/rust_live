@@ -103,7 +103,7 @@ pub enum Stmt {
     Let((SyntaxNode<Identifier>, Expected<Box<Expr>>)),
     Return(Option<Box<Expr>>),
     Play(Expected<Box<Expr>>),
-    Item(Box<Item>),
+    Decl(Box<Decl>),
 }
 
 #[derive(Clone, PartialEq)]
@@ -129,7 +129,7 @@ pub struct AnonymousFn {
 }
 
 #[derive(Clone, PartialEq)]
-pub enum Item {
+pub enum Decl {
     FnDecl(Box<FnDecl>),
 }
 
@@ -364,7 +364,7 @@ impl Display for Stmt {
                 None => write!(f, "return;"),
             },
             Play(expr) => write!(f, "play {};", expr),
-            Item(item) => write!(f, "{}", item),
+            Decl(item) => write!(f, "{}", item),
         }
     }
 }
@@ -381,7 +381,7 @@ impl Debug for Stmt {
                 None => write!(f, "return;"),
             },
             Play(expr) => write!(f, "play {:?};", expr),
-            Item(item) => write!(f, "{:?}", item),
+            Decl(item) => write!(f, "{:?}", item),
         }
     }
 }
@@ -478,18 +478,18 @@ impl Debug for FnDecl {
     }
 }
 
-impl Display for Item {
+impl Display for Decl {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use self::Item::*;
+        use self::Decl::*;
         match self {
             FnDecl(fun) => write!(f, "{}", fun),
         }
     }
 }
 
-impl Debug for Item {
+impl Debug for Decl {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        use self::Item::*;
+        use self::Decl::*;
         match self {
             FnDecl(fun) => write!(f, "{:?}", fun),
         }
