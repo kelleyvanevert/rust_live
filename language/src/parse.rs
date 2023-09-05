@@ -11,7 +11,7 @@ use nom::{
     branch::*,
     bytes::complete::*,
     character::complete::{char, *},
-    combinator::{cut, map, opt, recognize, value, verify},
+    combinator::{cut, map, opt, peek, recognize, value, verify},
     error,
     multi::{many0, many1, separated_list0},
     sequence::{delimited, pair, preceded, terminated, tuple},
@@ -422,7 +422,7 @@ fn p_anonymous_function(input: Span) -> ParseResult<SyntaxNode<AnonymousFn>> {
 fn p_function_declaration(input: Span) -> ParseResult<SyntaxNode<FnDecl>> {
     syntax_node(map(
         preceded(
-            pair(tag("fn"), space0),
+            pair(tag("fn"), space1),
             cut(tuple((
                 expecting(p_identifier, "expected function name"),
                 multispace0,
@@ -458,19 +458,22 @@ fn p_declaration(input: Span) -> ParseResult<SyntaxNode<Decl>> {
 fn p_statement_bare(input: Span) -> ParseResult<Stmt> {
     alt((
         map(
-            preceded(pair(tag("return"), space0), cut(opt(p_expression))),
+            preceded(
+                pair(tag("return"), alt((peek(tag(";")), space1))),
+                cut(opt(p_expression)),
+            ),
             |expr| Stmt::Return(expr.map(|node| node)),
         ),
         map(
             preceded(
-                pair(tag("play"), space0),
+                pair(tag("play"), space1),
                 cut(expecting(p_expression, "missing play expression")),
             ),
             |expr| Stmt::Play(expr.unwrap_or(SyntaxNode::MISSING)),
         ),
         map(
             preceded(
-                pair(tag("let"), space0),
+                pair(tag("let"), space1),
                 cut(tuple((
                     expecting(p_identifier, "missing let identifier"),
                     multispace0,
@@ -542,6 +545,8 @@ pub fn parse_document<'a>(source: impl Into<&'a str>) -> (Document, Vec<ParseErr
 
 #[cfg(test)]
 mod tests {
+    use std::assert_matches::{self, assert_matches};
+
     use super::*;
 
     fn parse<'a, R, E>(
@@ -820,6 +825,8 @@ mod tests {
             "let x = a(2, 3);".into(),
             vec!["missing `)` after call"],
         );
+
+        assert_matches!(parse(p_statement_bare, "lets"), Err(_));
     }
 
     #[test]
@@ -968,6 +975,24 @@ mod tests {
             vec![],
         );
 
+        assert_matches!(parse(p_statement_bare, "return26;"), Err(_));
+
+        test_parse(
+            map(p_statement_bare, debug),
+            "return; }",
+            "; }",
+            "return;".into(),
+            vec![],
+        );
+
+        test_parse(
+            map(p_statement_bare, debug),
+            "return ; }",
+            "; }",
+            "return;".into(),
+            vec![],
+        );
+
         test_parse(
             map(p_statement_bare, debug),
             "let x= (26 * 1hz); }",
@@ -992,7 +1017,7 @@ mod tests {
 
         test_parse(
             map(p_statement_bare, debug),
-            "play?",
+            "play ?",
             "?",
             "play <MISSING>;".into(),
             vec!["missing play expression"],
@@ -1036,7 +1061,7 @@ mod tests {
 
         test_parse(
             map(p_declaration, debug),
-            "fn",
+            "fn ",
             "",
             "fn <MISSING>() <MISSING>".into(),
             vec![
@@ -1049,7 +1074,7 @@ mod tests {
 
         test_parse(
             map(p_declaration, debug),
-            "fn;",
+            "fn ;",
             ";",
             "fn <MISSING>() <MISSING>".into(),
             vec![
@@ -1062,7 +1087,7 @@ mod tests {
 
         test_parse(
             map(p_declaration, debug),
-            "fn);",
+            "fn );",
             ";",
             "fn <MISSING>() <MISSING>".into(),
             vec![
@@ -1074,7 +1099,7 @@ mod tests {
 
         test_parse(
             map(p_declaration, debug),
-            "fn)};",
+            "fn )};",
             "};",
             "fn <MISSING>() <MISSING>".into(),
             vec![
@@ -1086,7 +1111,7 @@ mod tests {
 
         test_parse(
             map(p_declaration, debug),
-            "fn){;",
+            "fn ){;",
             "",
             "fn <MISSING>() { }".into(),
             vec![
@@ -1095,6 +1120,8 @@ mod tests {
                 "missing `}`",
             ],
         );
+
+        assert_matches!(parse(p_declaration, "fn){;"), Err(_));
     }
 
     #[test]
