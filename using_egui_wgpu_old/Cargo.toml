@@ -22,3 +22,4 @@ debug_unreachable = "0.1.1"
 spectrum-analyzer = "1.4.0"
 cpal = "0.15.2"
 float-cmp = "0.9.0"
+live_language = { path = "../language" }

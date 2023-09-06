@@ -1,3 +1,5 @@
+use itertools::Itertools;
+
 use super::line_data::{LineData, Token, WidgetInfo};
 
 #[derive(Debug)]
@@ -12,6 +14,22 @@ fn is_keyword(word: &str) -> bool {
 }
 
 pub fn syntax_highlight(data: &LineData) -> Vec<(usize, Vec<CodeToken>)> {
+    // hacky, for now — because the editor still works with "tokens" (either chars or widgets), whereas I'm not interested in that anymore, or at least not with widgets "in the actual source"
+    let source = data
+        .lines()
+        .iter()
+        .map(|line| {
+            line.iter()
+                .filter_map(|t| match t {
+                    Token::Char(c) => Some(c),
+                    _ => None,
+                })
+                .join("")
+        })
+        .join("\n");
+
+    // let (doc, parse_errors) = live_language::parse_document(&source[..]);
+
     data.lines()
         .iter()
         .map(|line| {
