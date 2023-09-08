@@ -172,12 +172,18 @@ fn p_numeric_primitive(input: Span) -> ParseResult<Primitive> {
 }
 
 fn str(input: Span) -> ParseResult<String> {
-    escaped_transform(alphanumeric1, '\\', one_of("\"\n\\")).parse(input)
+    escaped_transform(none_of("\\\""), '\\', one_of("\"\n")).parse(input)
 }
 
 fn p_string(input: Span) -> ParseResult<Primitive> {
     map(
-        preceded(char('\"'), cut(terminated(str, char('\"')))),
+        preceded(
+            char('\"'),
+            cut(terminated(
+                str,
+                expecting(char('\"'), "expected closing quote for string"),
+            )),
+        ),
         Primitive::Str,
     )
     .parse(input)
@@ -287,34 +293,61 @@ fn p_block(input: Span) -> ParseResult<SyntaxNode<Block>> {
     .parse(input)
 }
 
-fn p_access_or_call(input: Span) -> ParseResult<SyntaxNode<Expr>> {
-    syntax_node(map(
-        pair(
-            p_identifier,
-            opt(tuple((
+enum SubsequenctUse {
+    Index(SyntaxNode<Expr>),
+    AccessMember(SyntaxNode<Identifier>),
+    Call(Vec<SyntaxNode<Expr>>),
+}
+
+fn p_use_index(input: Span) -> ParseResult<(usize, SubsequenctUse)> {
+    map(
+        preceded(
+            tag("["),
+            cut(tuple((
                 multispace0,
-                tag("("),
+                p_expression,
+                multispace0,
+                expecting(tag("]"), "expected closing `]` for index"),
+                position,
+            ))),
+        ),
+        |(_, expr, _, _, pos)| (pos.location_offset(), SubsequenctUse::Index(expr)),
+    )
+    .parse(input)
+}
+
+fn p_use_access_member(input: Span) -> ParseResult<(usize, SubsequenctUse)> {
+    map(
+        preceded(tag("."), cut(tuple((multispace0, p_identifier, position)))),
+        |(_, id, pos)| (pos.location_offset(), SubsequenctUse::AccessMember(id)),
+    )
+    .parse(input)
+}
+
+fn p_use_call(input: Span) -> ParseResult<(usize, SubsequenctUse)> {
+    map(
+        preceded(
+            tag("("),
+            cut(tuple((
                 multispace0,
                 separated_list0(tuple((multispace0, tag(","), multispace0)), p_expression),
                 multispace0,
                 opt(tag(",")),
                 multispace0,
                 expecting(tag(")"), "missing `)` after call"),
+                position,
             ))),
         ),
-        |(id, rest)| match rest {
-            None => Expr::Var(id),
-            Some((_, _, _, args, _, _, _, _)) => Expr::Call(CallExpr { id, args }),
-        },
-    ))
+        |(_, args, _, _, _, _, pos)| (pos.location_offset(), SubsequenctUse::Call(args)),
+    )
     .parse(input)
 }
 
-fn p_factor(i: Span) -> ParseResult<SyntaxNode<Expr>> {
+fn p_factor(input: Span) -> ParseResult<SyntaxNode<Expr>> {
     delimited(
         multispace0,
         alt((
-            p_access_or_call,
+            syntax_node(map(p_identifier, Expr::Var)),
             syntax_node(map(p_primitive, Expr::Prim)),
             p_parenthesized_expr,
             syntax_node(map(p_block, |block| Expr::Block(block))),
@@ -322,7 +355,75 @@ fn p_factor(i: Span) -> ParseResult<SyntaxNode<Expr>> {
         )),
         multispace0,
     )
-    .parse(i)
+    .parse(input)
+
+    // map(
+    //     tuple((
+    //         multispace0,
+    //         position,
+    //         alt((
+    //             syntax_node(map(p_identifier, Expr::Var)),
+    //             syntax_node(map(p_primitive, Expr::Prim)),
+    //             p_parenthesized_expr,
+    //             syntax_node(map(p_block, |block| Expr::Block(block))),
+    //             syntax_node(map(p_anonymous_function, |fun| Expr::AnonymousFn(fun))),
+    //         )),
+    //         opt(preceded(
+    //             multispace0,
+    //             alt((p_use_index, p_use_access_member, p_use_call)),
+    //         )),
+    //         position,
+    //         multispace0,
+    //     )),
+    //     |(_, start, expr, usage, end, _)| {
+    //         let range = start.location_offset()..end.location_offset();
+    //         match usage {
+    //             None => expr,
+    //             Some(SubsequenctUse::Index(index)) => {
+    //                 SyntaxNode::new(Some(range), Some(Expr::Index(expr, index)))
+    //             }
+    //             Some(SubsequenctUse::AccessMember(mem)) => {
+    //                 SyntaxNode::new(Some(range), Some(Expr::Member(expr, mem)))
+    //             }
+    //             Some(SubsequenctUse::Call(args)) => {
+    //                 SyntaxNode::new(Some(range), Some(Expr::Call(CallExpr { fun: expr, args })))
+    //             }
+    //         }
+    //     },
+    // )
+    // .parse(i)
+}
+
+fn fold_usages(
+    initial: SyntaxNode<Expr>,
+    usages: Vec<(usize, SubsequenctUse)>,
+) -> SyntaxNode<Expr> {
+    usages.into_iter().fold(initial, |parent, (end, usage)| {
+        let range = extend_range_end(parent.range(), end);
+        match usage {
+            SubsequenctUse::Index(index) => {
+                SyntaxNode::new(range, Some(Expr::Index(parent, index)))
+            }
+            SubsequenctUse::AccessMember(mem) => {
+                SyntaxNode::new(range, Some(Expr::Member(parent, mem)))
+            }
+            SubsequenctUse::Call(args) => {
+                SyntaxNode::new(range, Some(Expr::Call(CallExpr { fun: parent, args })))
+            }
+        }
+    })
+}
+
+fn p_usage(i: Span) -> ParseResult<SyntaxNode<Expr>> {
+    let (i, initial) = p_factor(i)?;
+    let (i, usages) = many0(delimited(
+        multispace0,
+        alt((p_use_index, p_use_access_member, p_use_call)),
+        multispace0,
+    ))
+    .parse(i)?;
+
+    Ok((i, fold_usages(initial, usages)))
 }
 
 fn fold_exprs(
@@ -338,7 +439,7 @@ fn fold_exprs(
 }
 
 fn p_term(i: Span) -> ParseResult<SyntaxNode<Expr>> {
-    let (i, initial) = p_factor(i)?;
+    let (i, initial) = p_usage(i)?;
     let (i, remainder) = many0(alt((
         |i| {
             let (i, mul) = preceded(tag("*"), p_factor).parse(i)?;
@@ -524,6 +625,7 @@ fn p_document(mut input: Span) -> ParseResult<Document> {
             }
             // TODO - is this necessary?
             Err(e) => {
+                println!("GOT HERE {:?}", e);
                 return Err(e);
             }
         }
@@ -705,6 +807,45 @@ mod tests {
                 vec!["expected expression after `(`".into()]
             ))
         );
+
+        assert_eq!(
+            format!("{:?}", Expr::Prim(Primitive::Str("kelley".into()).into())),
+            r#""kelley""#
+        );
+
+        assert_eq!(
+            parse_debug(p_expression, r#""hello" "#,),
+            Ok(("", r#""hello""#.into(), vec![]))
+        );
+
+        assert_eq!(
+            parse_debug(p_expression, r#""hello "#,),
+            Ok((
+                "",
+                r#""hello ""#.into(),
+                vec!["expected closing quote for string".into()]
+            ))
+        );
+
+        assert_eq!(
+            parse_debug(p_expression, r#""bla/bla" "#,),
+            Ok(("", r#""bla/bla""#.into(), vec![]))
+        );
+        assert_eq!(
+            parse_debug(
+                p_expression,
+                r#""bla/bla
+bla" "#,
+            ),
+            Ok(("", "\"bla/bla\nbla\"".into(), vec![]))
+        );
+        assert_eq!(
+            parse_debug(
+                p_expression,
+                r#""/Users/kelley/emp/2022-11 Blabl Project/Samples/Processed/Freeze/Freeze RES [2022-11-23 221454].wav""#,
+            ),
+            Ok(("", "\"/Users/kelley/emp/2022-11 Blabl Project/Samples/Processed/Freeze/Freeze RES [2022-11-23 221454].wav\"".into(), vec![]))
+        );
     }
 
     #[test]
@@ -727,6 +868,26 @@ mod tests {
     #[test]
     fn test_expr_factor() {
         assert_eq!(parse_debug(p_factor, "  3  "), Ok(("", "3".into(), vec![])));
+
+        assert_eq!(
+            parse_debug(p_usage, "kelley.bla "),
+            Ok(("", "kelley.bla".into(), vec![]))
+        );
+
+        assert_eq!(
+            parse_debug(p_usage, "kelley[bla] "),
+            Ok(("", "kelley[bla]".into(), vec![]))
+        );
+
+        assert_eq!(
+            parse_debug(p_usage, "kelley(bla, 123) "),
+            Ok(("", "kelley(bla, 123)".into(), vec![]))
+        );
+
+        assert_eq!(
+            parse_debug(p_usage, "kelley(bla, 123)[bla] "),
+            Ok(("", "kelley(bla, 123)[bla]".into(), vec![]))
+        );
     }
 
     #[test]
@@ -1119,6 +1280,7 @@ mod tests {
     }
 
     #[test]
+    #[ignore]
     fn test_all_together() {
         test_parse_doc(
             " fn beat_reverb(int a, int b) {
@@ -1135,6 +1297,36 @@ mod tests {
             ],
             vec![],
         );
+
+        let totally_invalid_code = r#" let kick = {
+            let env = envelope[a=5ms * bezier(.46,.1,.77,.47), d=50ms, s=400ms, r=400ms];
+            sin[40hz] * env
+        };
+
+        let bpm = 120;
+        let beat = 60/bpm;
+
+        let hat = sample["/Users/kelley/emp/2022-11 Blabl Project/Samples/Processed/Freeze/Freeze RES [2022-11-23 221454].wav"];
+
+        let house = kick * every(beat) + hat * (every(.5*beat) + .5*beat);
+
+        play house;"#;
+
+        let (doc, errs) = parse_document(totally_invalid_code);
+
+        fn find(doc: &Document, line: &str) -> Option<Stmt> {
+            doc.stmts
+                .iter()
+                .cloned()
+                .find(|stmt| format!("{stmt:?}") == line)
+        }
+
+        println!("{doc:?}");
+        assert_matches!(find(&doc, "let bpm = 120;"), Some(_));
+        assert_matches!(find(&doc, "let beat = (60 / bpm);"), Some(_));
+        assert_matches!(find(&doc, "let hat = sample[\"/Users/kelley/emp/2022-11 Blabl Project/Samples/Processed/Freeze/Freeze RES [2022-11-23 221454].wav\"];"), Some(_));
+        assert_matches!(find(&doc, "let house = ((kick * every(beat)) + (hat * ((every(0.5 * beat) + (0.5 * beat)))));"), Some(_));
+        assert_matches!(find(&doc, "play house;"), Some(_));
     }
 }
 

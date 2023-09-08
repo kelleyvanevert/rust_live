@@ -65,6 +65,16 @@ pub fn cover_ranges(a: Option<Range<usize>>, b: Option<Range<usize>>) -> Option<
     }
 }
 
+pub fn extend_range_end(a: Option<Range<usize>>, end: usize) -> Option<Range<usize>> {
+    match a {
+        None => None,
+        Some(a) => Some(Range {
+            start: a.start,
+            end,
+        }),
+    }
+}
+
 impl<'a, T> From<(Option<Range<usize>>, T)> for SyntaxNode<T> {
     fn from((range, node): (Option<Range<usize>>, T)) -> Self {
         Self {
@@ -132,7 +142,7 @@ pub enum Primitive {
     Str(String),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Clone, PartialEq, Eq)]
 pub struct Identifier(pub String);
 
 #[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -198,7 +208,7 @@ impl Block {
 
 #[derive(Clone, PartialEq)]
 pub struct CallExpr {
-    pub id: SyntaxNode<Identifier>,
+    pub fun: SyntaxNode<Expr>,
     pub args: Vec<SyntaxNode<Expr>>,
 }
 
@@ -211,6 +221,8 @@ pub enum Expr {
     Paren(SyntaxNode<Expr>),
     Block(SyntaxNode<Block>),
     AnonymousFn(SyntaxNode<AnonymousFn>),
+    Index(SyntaxNode<Expr>, SyntaxNode<Expr>),
+    Member(SyntaxNode<Expr>, SyntaxNode<Identifier>),
 }
 
 // impl GetChildRanges for Expr {
@@ -282,7 +294,8 @@ impl Debug for Primitive {
             Float(val) => write!(f, "{val}"),
             Int(val) => write!(f, "{val}"),
             Quantity((val, unit)) => write!(f, "{val}{unit}"),
-            Str(val) => write!(f, "{val}"),
+            // TODO improve (?) not actually necessary for debug, but, technically it's incorrect for "real" code generation purposes
+            Str(val) => write!(f, r#""{val}""#),
         }
     }
 }
@@ -294,6 +307,12 @@ impl Display for Primitive {
 }
 
 impl Display for Identifier {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Debug for Identifier {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -330,6 +349,8 @@ impl Display for Expr {
             Paren(expr) => write!(f, "({})", expr),
             Block(block) => write!(f, "{}", block),
             AnonymousFn(fun) => write!(f, "{}", fun),
+            Index(a, b) => write!(f, "{}[{}]", a, b),
+            Member(a, b) => write!(f, "{}.{}", a, b),
         }
     }
 }
@@ -345,13 +366,15 @@ impl Debug for Expr {
             Paren(expr) => write!(f, "({:?})", expr),
             Block(block) => write!(f, "{:?}", block),
             AnonymousFn(fun) => write!(f, "{:?}", fun),
+            Index(a, b) => write!(f, "{:?}[{:?}]", a, b),
+            Member(a, b) => write!(f, "{:?}.{:?}", a, b),
         }
     }
 }
 
 impl Display for CallExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.id)?;
+        write!(f, "{}(", self.fun)?;
         let n = self.args.len();
         for (i, arg) in self.args.iter().enumerate() {
             write!(f, "{}", arg)?;
@@ -365,7 +388,7 @@ impl Display for CallExpr {
 
 impl Debug for CallExpr {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "{}(", self.id)?;
+        write!(f, "{:?}(", self.fun)?;
         let n = self.args.len();
         for (i, arg) in self.args.iter().enumerate() {
             write!(f, "{:?}", arg)?;
