@@ -545,7 +545,7 @@ pub fn parse_document<'a>(source: impl Into<&'a str>) -> (Document, Vec<ParseErr
 
 #[cfg(test)]
 mod tests {
-    use std::assert_matches::{self, assert_matches};
+    use std::{assert_matches::assert_matches, fmt::Debug};
 
     use super::*;
 
@@ -567,27 +567,21 @@ mod tests {
             .map(|(span, result)| (*span.fragment(), result, errors.take()))
     }
 
-    fn test_parse<'a, R, E>(
+    fn parse_debug<'a, R, E>(
         parser: impl Parser<Span<'a>, R, E>,
-        input: &'a str,
-        rem: &'a str,
-        res: R,
-        errors: Vec<&str>,
-    ) where
-        R: std::fmt::Debug + PartialEq,
-        E: std::fmt::Debug + PartialEq,
+        str: &'a str,
+    ) -> Result<(&'a str, String, Vec<String>), nom::Err<E>>
+    where
+        E: std::fmt::Debug,
+        R: Debug,
     {
-        let parse_result = parse(parser, input);
-        let (remaining, result, parse_errors) = parse_result.expect("test parse failed");
-        assert_eq!(remaining, rem);
-        assert_eq!(result, res);
-        assert_eq!(
-            errors,
-            parse_errors
-                .into_iter()
-                .map(|err| err.1)
-                .collect::<Vec<_>>()
-        );
+        parse(map(parser, debug), str).map(|(rem, res, errs)| {
+            (
+                rem,
+                res,
+                errs.into_iter().map(|err| err.1).collect::<Vec<_>>(),
+            )
+        })
     }
 
     fn test_parse_doc<'a>(input: &'a str, should_be: Vec<&str>, errors: Vec<&str>) {
@@ -688,221 +682,203 @@ mod tests {
 
     #[test]
     fn test_expr_errors() {
-        test_parse(
-            map(p_expression, debug),
-            "(123)!",
-            "!",
-            "(123)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, "(123)!",),
+            Ok(("!", "(123)".into(), vec![],))
         );
 
-        test_parse(
-            map(p_expression, debug),
-            "(123!",
-            "!",
-            "(123)".into(),
-            vec!["missing `)`"],
+        assert_eq!(
+            parse_debug(p_expression, "(123!",),
+            Ok(("!", "(123)".into(), vec!["missing `)`".into()]))
         );
 
-        test_parse(
-            map(p_expression, debug),
-            "(123 + 456!",
-            "!",
-            "((123 + 456))".into(),
-            vec!["missing `)`"],
+        assert_eq!(
+            parse_debug(p_expression, "(123 + 456!",),
+            Ok(("!", "((123 + 456))".into(), vec!["missing `)`".into()]))
         );
 
-        test_parse(
-            map(p_expression, debug),
-            "123 + ()!",
-            "!",
-            "(123 + (<MISSING>))".into(),
-            vec!["expected expression after `(`"],
+        assert_eq!(
+            parse_debug(p_expression, "123 + ()!",),
+            Ok((
+                "!",
+                "(123 + (<MISSING>))".into(),
+                vec!["expected expression after `(`".into()]
+            ))
         );
     }
 
     #[test]
     fn test_anonymous_fn() {
-        test_parse(map(p_expression, debug), "|| 5", "", "|| 5".into(), vec![]);
-        test_parse(
-            map(p_expression, debug),
-            "||",
-            "",
-            "|| <MISSING>".into(),
-            vec!["expected anonymous function body"],
+        assert_eq!(
+            parse_debug(p_expression, "|| 5"),
+            Ok(("", "|| 5".into(), vec![]))
+        );
+
+        assert_eq!(
+            parse_debug(p_expression, "||",),
+            Ok((
+                "",
+                "|| <MISSING>".into(),
+                vec!["expected anonymous function body".into()]
+            ))
         );
     }
 
     #[test]
     fn test_expr_factor() {
-        test_parse(map(p_factor, debug), "  3  ", "", "3".into(), vec![]);
+        assert_eq!(parse_debug(p_factor, "  3  "), Ok(("", "3".into(), vec![])));
     }
 
     #[test]
     fn test_term() {
-        test_parse(
-            map(p_term, debug),
-            " 3 *  5   ",
-            "",
-            "(3 * 5)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_term, " 3 *  5   ",),
+            Ok(("", "(3 * 5)".into(), vec![]))
         );
-        test_parse(
-            map(p_term, debug),
-            " 3 *  5hz   ",
-            "",
-            "(3 * 5hz)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_term, " 3 *  5hz   ",),
+            Ok(("", "(3 * 5hz)".into(), vec![]))
         );
     }
 
     #[test]
     fn test_expr() {
-        test_parse(
-            map(p_expression, debug),
-            " 1 + 2 *  3 ",
-            "",
-            "(1 + (2 * 3))".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, " 1 + 2 *  3 ",),
+            Ok(("", "(1 + (2 * 3))".into(), vec![]))
         );
-        test_parse(
-            map(p_expression, debug),
-            " 1 + 2 hz *  3 / 4 - 5 ",
-            "",
-            "((1 + ((2hz * 3) / 4)) - 5)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, " 1 + 2 hz *  3 / 4 - 5 ",),
+            Ok(("", "((1 + ((2hz * 3) / 4)) - 5)".into(), vec![]))
         );
-        test_parse(
-            map(p_expression, debug),
-            " 72 / 2 / 3 ",
-            "",
-            "((72 / 2) / 3)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, " 72 / 2 / 3 ",),
+            Ok(("", "((72 / 2) / 3)".into(), vec![]))
         );
     }
 
     #[test]
     fn test_parens() {
-        test_parse(
-            map(p_expression, debug),
-            " ( 1.2s + (2) ) *  3 ",
-            "",
-            "(((1.2s + (2))) * 3)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, " ( 1.2s + (2) ) *  3 ",),
+            Ok(("", "(((1.2s + (2))) * 3)".into(), vec![]))
         );
     }
 
     #[test]
     fn test_block_expr() {
-        test_parse(
-            map(p_expression, debug),
-            " ( 1.2s + { let x = 2; 5; x + 1 } ) *  3 ",
-            "",
-            "(((1.2s + { let x = 2; 5; (x + 1) })) * 3)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, " ( 1.2s + { let x = 2; 5; x + 1 } ) *  3 ",),
+            Ok((
+                "",
+                "(((1.2s + { let x = 2; 5; (x + 1) })) * 3)".into(),
+                vec![]
+            ))
         );
 
-        test_parse(
-            map(p_expression, debug),
-            " ( 1.2s + { let x = 2; 5; x + 1; } ) *  3 ",
-            "",
-            "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, " ( 1.2s + { let x = 2; 5; x + 1; } ) *  3 ",),
+            Ok((
+                "",
+                "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
+                vec![]
+            ))
         );
 
-        test_parse(
-            map(p_expression, debug),
-            " ( 1.2s + { let x = 2; 5; x + 1;  ) *  3 ",
-            "",
-            "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
-            vec!["missing `}`"],
+        assert_eq!(
+            parse_debug(p_expression, " ( 1.2s + { let x = 2; 5; x + 1;  ) *  3 ",),
+            Ok((
+                "",
+                "(((1.2s + { let x = 2; 5; (x + 1); })) * 3)".into(),
+                vec!["missing `}`".into()]
+            ))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let x = a(2, 3;more",
-            ";more",
-            "let x = a(2, 3);".into(),
-            vec!["missing `)` after call"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let x = a(2, 3;more",),
+            Ok((
+                ";more",
+                "let x = a(2, 3);".into(),
+                vec!["missing `)` after call".into()]
+            ))
         );
 
-        assert_matches!(parse(p_statement_bare, "lets"), Err(_));
+        assert_matches!(parse_debug(p_statement_bare, "lets"), Err(_));
     }
 
     #[test]
     fn test_fn_expr() {
-        test_parse(map(p_param, debug), "osc s, ", ", ", "osc s".into(), vec![]);
-
-        test_parse(
-            map(p_expression, debug),
-            "|osc s| s + 5hz?!",
-            "?!",
-            "|osc s| (s + 5hz)".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_param, "osc s, "),
+            Ok((", ", "osc s".into(), vec![]))
         );
 
-        test_parse(
-            map(p_expression, debug),
-            "|osc s| { s + 5hz }?!",
-            "?!",
-            "|osc s| { (s + 5hz) }".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, "|osc s| s + 5hz?!",),
+            Ok(("?!", "|osc s| (s + 5hz)".into(), vec![]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let x = |osc s| { s + 5hz };?!",
-            ";?!",
-            "let x = |osc s| { (s + 5hz) };".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_expression, "|osc s| { s + 5hz }?!",),
+            Ok(("?!", "|osc s| { (s + 5hz) }".into(), vec![]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let = |osc s| { s + 5hz };?!",
-            ";?!",
-            "let <MISSING> = |osc s| { (s + 5hz) };".into(),
-            vec!["missing let identifier"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let x = |osc s| { s + 5hz };?!",),
+            Ok((";?!", "let x = |osc s| { (s + 5hz) };".into(), vec![]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let xyz =  ?!",
-            "?!",
-            "let xyz = <MISSING>;".into(),
-            vec!["missing let expression"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let = |osc s| { s + 5hz };?!",),
+            Ok((
+                ";?!",
+                "let <MISSING> = |osc s| { (s + 5hz) };".into(),
+                vec!["missing let identifier".into()]
+            ))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let xyz; let a = 4",
-            "; let a = 4",
-            "let xyz = <MISSING>;".into(),
-            vec!["missing `=`", "missing let expression"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let xyz =  ?!",),
+            Ok((
+                "?!",
+                "let xyz = <MISSING>;".into(),
+                vec!["missing let expression".into()]
+            ))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let x = { a b }",
-            "",
-            "let x = { a; b };".into(),
-            vec!["missing `;`"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let xyz; let a = 4",),
+            Ok((
+                "; let a = 4",
+                "let xyz = <MISSING>;".into(),
+                vec!["missing `=`".into(), "missing let expression".into()]
+            ))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let xyz 234; let a = 4",
-            "; let a = 4",
-            "let xyz = 234;".into(),
-            vec!["missing `=`"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let x = { a b }",),
+            Ok(("", "let x = { a; b };".into(), vec!["missing `;`".into()]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let = let a=b; let xyz=23;",
-            "let a=b; let xyz=23;",
-            "let <MISSING> = <MISSING>;".into(),
-            vec!["missing let identifier", "missing let expression"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let xyz 234; let a = 4",),
+            Ok((
+                "; let a = 4",
+                "let xyz = 234;".into(),
+                vec!["missing `=`".into()]
+            ))
+        );
+
+        assert_eq!(
+            parse_debug(p_statement_bare, "let = let a=b; let xyz=23;",),
+            Ok((
+                "let a=b; let xyz=23;",
+                "let <MISSING> = <MISSING>;".into(),
+                vec![
+                    "missing let identifier".into(),
+                    "missing let expression".into()
+                ]
+            ))
         );
     }
 
@@ -967,183 +943,178 @@ mod tests {
 
     #[test]
     fn test_stmts() {
-        test_parse(
-            map(p_statement_bare, debug),
-            "return 26; }",
-            "; }",
-            "return 26;".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_statement_bare, "return 26; }",),
+            Ok(("; }", "return 26;".into(), vec![]))
         );
 
-        assert_matches!(parse(p_statement_bare, "return26;"), Err(_));
+        assert_matches!(parse_debug(p_statement_bare, "return26;"), Err(_));
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "return; }",
-            "; }",
-            "return;".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_statement_bare, "return; }",),
+            Ok(("; }", "return;".into(), vec![]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "return ; }",
-            "; }",
-            "return;".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_statement_bare, "return ; }",),
+            Ok(("; }", "return;".into(), vec![]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "let x= (26 * 1hz); }",
-            "; }",
-            "let x = ((26 * 1hz));".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_statement_bare, "let x= (26 * 1hz); }",),
+            Ok(("; }", "let x = ((26 * 1hz));".into(), vec![]))
         );
-        test_parse(
-            map(p_declaration, debug),
-            "fn add( int x, wave bla) { 5 }?",
-            "?",
-            "fn add(int x, wave bla) { 5 }".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_declaration, "fn add( int x, wave bla) { 5 }?",),
+            Ok(("?", "fn add(int x, wave bla) { 5 }".into(), vec![]))
         );
-        test_parse(
-            map(p_declaration, debug),
-            "fn add( int x, wave bla, ) { 5 }?",
-            "?",
-            "fn add(int x, wave bla) { 5 }".into(),
-            vec![],
+        assert_eq!(
+            parse_debug(p_declaration, "fn add( int x, wave bla, ) { 5 }?",),
+            Ok(("?", "fn add(int x, wave bla) { 5 }".into(), vec![]))
         );
 
-        test_parse(
-            map(p_statement_bare, debug),
-            "play ?",
-            "?",
-            "play <MISSING>;".into(),
-            vec!["missing play expression"],
+        assert_eq!(
+            parse_debug(p_statement_bare, "play ?",),
+            Ok((
+                "?",
+                "play <MISSING>;".into(),
+                vec!["missing play expression".into()]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn () { 5",
-            "",
-            "fn <MISSING>() { 5 }".into(),
-            vec!["expected function name", "missing `}`"],
+        assert_eq!(
+            parse_debug(p_declaration, "fn () { 5",),
+            Ok((
+                "",
+                "fn <MISSING>() { 5 }".into(),
+                vec!["expected function name".into(), "missing `}`".into()]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn ( { 5 let h = 6",
-            "",
-            "fn <MISSING>() { 5; let h = 6; }".into(),
-            vec![
-                "expected function name",
-                "expected function parameters closing `)`",
-                "missing `;`",
-                "missing `;`",
-                "missing `}`",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn ( { 5 let h = 6"),
+            Ok((
+                "",
+                "fn <MISSING>() { 5; let h = 6; }".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters closing `)`".into(),
+                    "missing `;`".into(),
+                    "missing `;`".into(),
+                    "missing `}`".into(),
+                ]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn { 5; let h = 6",
-            "",
-            "fn <MISSING>() { 5; let h = 6; }".into(),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "expected function parameters closing `)`",
-                "missing `;`",
-                "missing `}`",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn { 5; let h = 6"),
+            Ok((
+                "",
+                "fn <MISSING>() { 5; let h = 6; }".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "expected function parameters closing `)`".into(),
+                    "missing `;`".into(),
+                    "missing `}`".into(),
+                ]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn ",
-            "",
-            "fn <MISSING>() <MISSING>".into(),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "expected function parameters closing `)`",
-                "expected function body",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn "),
+            Ok((
+                "",
+                "fn <MISSING>() <MISSING>".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "expected function parameters closing `)`".into(),
+                    "expected function body".into(),
+                ]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn ;",
-            ";",
-            "fn <MISSING>() <MISSING>".into(),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "expected function parameters closing `)`",
-                "expected function body",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn ;"),
+            Ok((
+                ";",
+                "fn <MISSING>() <MISSING>".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "expected function parameters closing `)`".into(),
+                    "expected function body".into(),
+                ]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn );",
-            ";",
-            "fn <MISSING>() <MISSING>".into(),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "expected function body",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn );"),
+            Ok((
+                ";",
+                "fn <MISSING>() <MISSING>".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "expected function body".into(),
+                ]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn )};",
-            "};",
-            "fn <MISSING>() <MISSING>".into(),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "expected function body",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn )};"),
+            Ok((
+                "};",
+                "fn <MISSING>() <MISSING>".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "expected function body".into(),
+                ]
+            ))
         );
 
-        test_parse(
-            map(p_declaration, debug),
-            "fn ){;",
-            "",
-            "fn <MISSING>() { }".into(),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "missing `}`",
-            ],
+        assert_eq!(
+            parse_debug(p_declaration, "fn ){;"),
+            Ok((
+                "",
+                "fn <MISSING>() { }".into(),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "missing `}`".into(),
+                ]
+            ))
         );
 
-        assert_matches!(parse(p_declaration, "fn){;"), Err(_));
+        assert_matches!(parse_debug(p_declaration, "fn){;"), Err(_));
     }
 
     #[test]
     fn test_document() {
-        test_parse(
-            map(p_document, debug),
-            "fn { 5; let h = 6 }}; let h = 6;; 123 *68 play 6;",
-            "",
-            vec![
-                "fn <MISSING>() { 5; let h = 6; }",
-                "let h = 6;",
-                "(123 * 68);",
-                "play 6;",
-            ]
-            .join("\n\n"),
-            vec![
-                "expected function name",
-                "expected function parameters opening `(`",
-                "expected function parameters closing `)`",
-                "missing `;`",
-                "missing `;`",
-            ],
+        assert_eq!(
+            parse_debug(
+                p_document,
+                "fn { 5; let h = 6 }}; let h = 6;; 123 *68 play 6;",
+            ),
+            Ok((
+                "",
+                vec![
+                    "fn <MISSING>() { 5; let h = 6; }",
+                    "let h = 6;",
+                    "(123 * 68);",
+                    "play 6;",
+                ]
+                .join("\n\n"),
+                vec![
+                    "expected function name".into(),
+                    "expected function parameters opening `(`".into(),
+                    "expected function parameters closing `)`".into(),
+                    "missing `;`".into(),
+                    "missing `;`".into(),
+                ],
+            )),
         );
     }
 
