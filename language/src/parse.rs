@@ -442,11 +442,11 @@ fn p_term(i: Span) -> ParseResult<SyntaxNode<Expr>> {
     let (i, initial) = p_usage(i)?;
     let (i, remainder) = many0(alt((
         |i| {
-            let (i, mul) = preceded(tag("*"), p_factor).parse(i)?;
+            let (i, mul) = preceded(tag("*"), p_usage).parse(i)?;
             Ok((i, (Op::Mul, mul)))
         },
         |i| {
-            let (i, div) = preceded(tag("/"), p_factor).parse(i)?;
+            let (i, div) = preceded(tag("/"), p_usage).parse(i)?;
             Ok((i, (Op::Div, div)))
         },
     )))
@@ -888,6 +888,11 @@ bla" "#,
             parse_debug(p_usage, "kelley(bla, 123)[bla] "),
             Ok(("", "kelley(bla, 123)[bla]".into(), vec![]))
         );
+
+        assert_eq!(
+            parse_debug(p_expression, "midi_in * bla  * bla(  4, 6) "),
+            Ok(("", "((midi_in * bla) * bla(4, 6))".into(), vec![]))
+        );
     }
 
     #[test]
@@ -1280,7 +1285,6 @@ bla" "#,
     }
 
     #[test]
-    #[ignore]
     fn test_all_together() {
         test_parse_doc(
             " fn beat_reverb(int a, int b) {
