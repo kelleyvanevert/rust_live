@@ -150,6 +150,66 @@ pub struct SyntaxNode<'a> {
     children: Vec<SyntaxNode<'a>>,
 }
 
+trait CollectibleNodes<'a>
+where
+    Self: Sized,
+{
+    fn collect_into(self, nodes: &mut Vec<SyntaxNode<'a>>);
+}
+
+impl<'a> CollectibleNodes<'a> for SyntaxNode<'a> {
+    fn collect_into(self, nodes: &mut Vec<SyntaxNode<'a>>) {
+        if !self.empty() {
+            nodes.push(self.clone());
+        }
+    }
+}
+
+impl<'a, C> CollectibleNodes<'a> for Vec<C>
+where
+    C: CollectibleNodes<'a> + Sized,
+{
+    fn collect_into(self, nodes: &mut Vec<SyntaxNode<'a>>) {
+        for item in self {
+            item.collect_into(nodes);
+        }
+    }
+}
+
+impl<'a, C> CollectibleNodes<'a> for Option<C>
+where
+    C: CollectibleNodes<'a> + Sized,
+{
+    fn collect_into(self, nodes: &mut Vec<SyntaxNode<'a>>) {
+        if let Some(node) = self {
+            node.collect_into(nodes);
+        }
+    }
+}
+
+impl<'a, C, D> CollectibleNodes<'a> for (C, D)
+where
+    C: CollectibleNodes<'a> + Sized,
+    D: CollectibleNodes<'a> + Sized,
+{
+    fn collect_into(self, nodes: &mut Vec<SyntaxNode<'a>>) {
+        self.0.collect_into(nodes);
+        self.1.collect_into(nodes);
+    }
+}
+
+impl<'a, C, D, E> CollectibleNodes<'a> for (C, D, E)
+where
+    C: CollectibleNodes<'a> + Sized,
+    D: CollectibleNodes<'a> + Sized,
+    E: CollectibleNodes<'a> + Sized,
+{
+    fn collect_into(self, nodes: &mut Vec<SyntaxNode<'a>>) {
+        self.0.collect_into(nodes);
+        self.1.collect_into(nodes);
+    }
+}
+
 impl<'a> SyntaxNode<'a> {
     pub fn leaf(kind: Kind, span: Span<'a>) -> Self {
         Self {
@@ -173,46 +233,15 @@ impl<'a> SyntaxNode<'a> {
         self.range.end.0 == self.range.start.0
     }
 
-    pub fn with_child(mut self, child: SyntaxNode<'a>) -> Self {
-        self.add_child(child);
-
-        self
-    }
-
-    pub fn with_children<I>(mut self, children: I) -> Self
+    fn with_collect_children<I>(mut self, collect: I) -> Self
     where
-        I: IntoIterator<Item = SyntaxNode<'a>>,
+        I: CollectibleNodes<'a>,
     {
-        for child in children {
-            self.add_child(child);
-        }
-
+        collect.collect_into(&mut self.children);
         self
     }
 
-    pub fn with_children_opt<I>(mut self, children: I) -> Self
-    where
-        I: IntoIterator<Item = Option<SyntaxNode<'a>>>,
-    {
-        for child in children {
-            self.add_child_opt(child);
-        }
-
-        self
-    }
-
-    pub fn add_child(&mut self, child: SyntaxNode<'a>) {
-        if !child.empty() {
-            self.children.push(child);
-        }
-    }
-
-    pub fn add_child_opt(&mut self, child: Option<SyntaxNode<'a>>) {
-        if let Some(child) = child {
-            self.add_child(child);
-        }
-    }
-
+    #[allow(unused)]
     pub fn fold_preorder<A>(&self, acc: A, f: &mut impl FnMut(A, &SyntaxNode<'a>) -> A) -> A {
         let acc = f(acc, &self);
 
@@ -221,6 +250,7 @@ impl<'a> SyntaxNode<'a> {
             .fold(acc, |acc, tree| tree.fold_preorder(acc, f))
     }
 
+    #[allow(unused)]
     pub fn fold_postorder<A>(&self, acc: A, f: &mut impl FnMut(A, &SyntaxNode<'a>) -> A) -> A {
         let acc = self
             .children
@@ -237,6 +267,7 @@ impl<'a> SyntaxNode<'a> {
         f(self);
     }
 
+    #[allow(unused)]
     pub fn stringify(&self) -> String {
         let mut str: String = "".into();
 
@@ -248,10 +279,6 @@ impl<'a> SyntaxNode<'a> {
 
         str
     }
-}
-
-struct Postorder<'a> {
-    start: SyntaxNode<'a>,
 }
 
 impl<'a> std::fmt::Debug for SyntaxNode<'a> {
@@ -373,10 +400,7 @@ fn p_num_or_amount(input: Span) -> ParseResult<SyntaxNode> {
         with_span(tuple((p_num, opt(tuple((p_ws0, p_unit)))))),
         |(span, (num, and_unit))| match and_unit {
             None => num,
-            Some((ws, unit)) => SyntaxNode::leaf(Kind::Amount, span)
-                .with_child(num)
-                .with_child(ws)
-                .with_child(unit),
+            Some(items) => SyntaxNode::leaf(Kind::Amount, span).with_collect_children((num, items)),
         },
     )
     .parse(input)
@@ -664,7 +688,7 @@ fn fold_usages<'a>(
 ) -> SyntaxNode<'a> {
     usages.into_iter().fold(initial, |expr, (usage, nodes)| {
         let range = cover_ranges(expr.range, nodes.last().unwrap().range);
-        let mut node = SyntaxNode::new(
+        let mut parent = SyntaxNode::new(
             match usage {
                 SubsequenctUse::Index => Kind::IndexExpr,
                 SubsequenctUse::AccessMember => Kind::MemberExpr,
@@ -673,10 +697,10 @@ fn fold_usages<'a>(
             range,
         );
 
-        node.add_child(expr);
-        node.children.extend(nodes);
+        expr.collect_into(&mut parent.children);
+        parent.children.extend(nodes);
 
-        node
+        parent
     })
 }
 
@@ -689,7 +713,8 @@ fn p_usage(i: Span) -> ParseResult<SyntaxNode> {
 }
 
 // TODO
-fn p_expression(input: Span) -> ParseResult<SyntaxNode> {
+#[allow(unused)]
+pub fn p_expression(input: Span) -> ParseResult<SyntaxNode> {
     p_usage.parse(input)
 }
 
@@ -773,23 +798,7 @@ fn p_parenthesized_expr(i: Span) -> ParseResult<SyntaxNode> {
                 "missing `)`",
             ),
         ))),
-        |(span, (open, expr, close))| {
-            let mut node = SyntaxNode::leaf(Kind::ParenExpr, span);
-
-            node.add_child(open);
-
-            if let Some((ws, expr)) = expr {
-                node.add_child(ws);
-                node.add_child(expr);
-            }
-
-            if let Some((ws, close)) = close {
-                node.add_child(ws);
-                node.add_child(close);
-            }
-
-            node
-        },
+        |(span, items)| SyntaxNode::leaf(Kind::ParenExpr, span).with_collect_children(items),
     )
     .parse(i)
 }
