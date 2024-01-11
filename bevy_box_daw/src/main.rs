@@ -26,7 +26,6 @@ const TIMESTEP: f64 = 1. / 60.0;
 fn main() {
     App::new()
         .insert_resource(ClearColor(Color::rgb(0.1, 0.1, 0.1)))
-        .insert_resource(Dragging(None))
         .insert_resource(Drags(0))
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
@@ -142,12 +141,9 @@ fn add_first_boxes(
 }
 
 #[derive(Resource)]
-struct Dragging(Option<DragState>);
-
-#[derive(Resource)]
 struct Drags(usize);
 
-#[derive(Debug)]
+#[derive(Debug, Component)]
 struct DragState {
     entity: Entity,
     down: Vec2,
@@ -156,12 +152,12 @@ struct DragState {
 }
 
 fn drag_cursor_icon(
-    dragging: ResMut<Dragging>,
+    dragging: Query<&DragState>,
     mouse_pos: Res<MousePos>,
     mut windows: Query<&mut Window>,
     square: Query<&SquareCoords>,
 ) {
-    let is_dragging = dragging.0.is_some();
+    let is_dragging = !dragging.is_empty();
     let is_hovering = square.iter().any(|coords| coords.0.contains(mouse_pos.0));
 
     windows.single_mut().cursor.icon = match (is_dragging, is_hovering) {
@@ -172,13 +168,14 @@ fn drag_cursor_icon(
 }
 
 fn drag_start(
-    mut dragging: ResMut<Dragging>,
+    mut commands: Commands,
+    dragging: Query<&DragState>,
     mut drags: ResMut<Drags>,
     pos: Res<MousePos>,
     mouse: Res<Input<MouseButton>>,
     square: Query<(Entity, &SquareCoords)>,
 ) {
-    if mouse.just_pressed(MouseButton::Left) && dragging.0.is_none() {
+    if mouse.just_pressed(MouseButton::Left) && dragging.is_empty() {
         info!("mouse at {:?}", pos);
 
         if let Some((entity, coords)) = square
@@ -186,29 +183,24 @@ fn drag_start(
             .filter(|(_, coords)| coords.0.contains(pos.0))
             .max_by_key(|(_, coords)| coords.1)
         {
-            dragging.0 = Some(DragState {
+            commands.get_entity(entity).unwrap().insert(DragState {
                 entity,
                 down: pos.0,
                 drag_no: drags.0,
                 start_rect: coords.0,
             });
+
             drags.0 += 1;
         }
     }
 }
 
 fn drag_move(
-    mut dragging: ResMut<Dragging>,
     pos: Res<MousePos>,
-    mut square: Query<(Entity, &mut Mesh2dHandle, &mut SquareCoords)>,
+    mut dragging: Query<(Entity, &DragState, &mut Mesh2dHandle, &mut SquareCoords)>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    if let Some(drag_state) = &mut dragging.0 {
-        let (_, mut mesh_handle, mut coords) = square
-            .iter_mut()
-            .find(|s| s.0 == drag_state.entity)
-            .unwrap();
-
+    if let Some((_, drag_state, mut mesh_handle, mut coords)) = dragging.get_single_mut().ok() {
         let d = pos.0 - drag_state.down;
         let mut new_rect = drag_state.start_rect;
         new_rect.min += d;
@@ -225,25 +217,20 @@ fn drag_move(
 }
 
 fn drag_end(
-    mut dragging: ResMut<Dragging>,
+    mut commands: Commands,
     mouse: Res<Input<MouseButton>>,
-    mut square: Query<(Entity, &mut Mesh2dHandle, &SquareCoords)>,
+    mut dragging: Query<(Entity, &DragState, &mut Mesh2dHandle, &SquareCoords)>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    if let Some(drag_state) = &mut dragging.0
+    if let Some((entity, drag_state, mut mesh_handle, mut coords)) = dragging.get_single_mut().ok()
         && mouse.just_released(MouseButton::Left)
     {
-        let (_, mut mesh_handle, coords) = square
-            .iter_mut()
-            .find(|s| s.0 == drag_state.entity)
-            .unwrap();
-
         mesh_handle.0 = meshes.add(Mesh::from(shape::Box::from_corners(
             coords.0.min.extend(0.0),
             coords.0.max.extend(0.0),
         )));
 
-        dragging.0 = None;
+        commands.get_entity(entity).unwrap().remove::<DragState>();
     }
 }
 
