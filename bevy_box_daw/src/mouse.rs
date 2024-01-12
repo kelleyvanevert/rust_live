@@ -3,6 +3,9 @@ use bevy::{ecs::system::EntityCommand, prelude::*, window::PrimaryWindow};
 #[derive(Debug, Resource, Clone, Copy, PartialEq)]
 pub struct MousePos(pub Vec2);
 
+#[derive(Debug, Resource, Clone, Copy, PartialEq)]
+pub struct MouseWorldPos(pub Vec2);
+
 pub struct MyMouseTrackingPlugin;
 
 impl Plugin for MyMouseTrackingPlugin {
@@ -17,14 +20,21 @@ fn setup(mut commands: Commands, window: Query<&Window, With<PrimaryWindow>>) {
 
 fn update(
     window: Query<Entity, With<PrimaryWindow>>,
+    camera: Query<(&GlobalTransform, &Camera)>,
     mut movement: EventReader<CursorMoved>,
     mut pos: ResMut<MousePos>,
+    mut world_pos: ResMut<MouseWorldPos>,
 ) {
+    let (camera_transform, camera) = camera.single();
     let window = window.single();
 
     for event in movement.read() {
         if event.window == window {
             pos.0 = event.position;
+
+            world_pos.0 = camera
+                .viewport_to_world_2d(camera_transform, pos.0)
+                .unwrap();
         }
     }
 }
@@ -33,16 +43,22 @@ fn update(
 pub struct InitMyMouseTracking;
 
 impl EntityCommand for InitMyMouseTracking {
-    fn apply(self, entity: Entity, world: &mut World) {
+    fn apply(self, _: Entity, world: &mut World) {
         let window = world
             .query::<(&Window, With<PrimaryWindow>)>()
             .single(world)
             .0;
 
-        let mouse_pos = window.cursor_position().unwrap_or_default();
+        let pos = window.cursor_position().unwrap_or_default();
+        world.insert_resource(MousePos(pos));
 
-        world.insert_resource(MousePos(mouse_pos));
-        // world.entity_mut(entity).insert(MousePos(mouse_pos));
+        // can't do this yet, because of initialization ordering stuff...
+        // ===
+        // let (camera_transform, camera) = world.query::<(&GlobalTransform, &Camera)>().single(world);
+        world.insert_resource(MouseWorldPos(
+            // camera.viewport_to_world_2d(camera_transform, pos).unwrap(),
+            pos,
+        ));
     }
 }
 

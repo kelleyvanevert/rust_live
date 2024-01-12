@@ -1,7 +1,7 @@
 #![feature(let_chains)]
 
 use crate::{
-    mouse::{InitMyMouseTracking, MousePos, MyMouseTrackingPlugin},
+    mouse::{InitMyMouseTracking, MyMouseTrackingPlugin},
     square::Square,
 };
 use bevy::{
@@ -9,11 +9,12 @@ use bevy::{
         mouse::{MouseButtonInput, MouseMotion, MouseWheel},
         touchpad::{TouchpadMagnify, TouchpadRotate},
     },
-    math::vec3,
+    math::{vec2, vec3},
     prelude::*,
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
     window::PrimaryWindow,
 };
+use mouse::MouseWorldPos;
 use square::SquareCoords;
 
 pub mod mouse;
@@ -39,7 +40,7 @@ fn main() {
         ))
         .add_systems(Startup, (setup, add_first_boxes).chain())
         .add_systems(Update, zoom_control_system)
-        .add_systems(Update, update_camera_transform)
+        .add_systems(Update, camera_movement)
         .insert_resource(Time::<Fixed>::from_seconds(TIMESTEP))
         .add_systems(Update, print_mouse_events_system)
         .add_systems(Update, drag_cursor_icon)
@@ -48,7 +49,7 @@ fn main() {
         .add_systems(Update, drag_end)
         .add_systems(Update, |mut q: Query<(&mut Transform, &SquareCoords)>| {
             for (mut transform, coords) in &mut q {
-                transform.translation.z = coords.1 as f32;
+                transform.translation.z = coords.z as f32;
             }
         })
         // .add_systems(FixedUpdate, |pos: Res<MousePos>| {
@@ -63,19 +64,62 @@ fn main() {
 #[derive(Component)]
 struct MainCamera;
 
-fn setup(mut commands: Commands) {
+// #[derive(Resource)]
+// struct Zoom(Transform);
+
+fn setup(mut commands: Commands, window: Query<&Window, With<PrimaryWindow>>) {
+    let window = window.single();
+
     commands
-        .spawn((Camera2dBundle::default(), MainCamera))
+        .spawn((
+            Camera2dBundle {
+                transform: Transform::default()
+                    .with_scale(vec3(1.0, -1.0, 1.0))
+                    .with_translation(vec3(window.width() / 2.0, window.height() / 2.0, 0.0)),
+                ..Default::default()
+            },
+            MainCamera,
+        ))
         .add(InitMyMouseTracking);
+
+    // commands.insert_resource(Zoom(Transform::default()));
 }
 
 fn zoom_control_system(
-    input: Res<Input<KeyCode>>,
-    mut camera_query: Query<&mut OrthographicProjection>,
+    mut touchpad_magnify_events: EventReader<TouchpadMagnify>,
+    mut mouse_wheel_events: EventReader<MouseWheel>,
+    // mut camera_query: Query<(&Camera, &mut OrthographicProjection)>,
+    mut transform: Query<(&mut Transform, &OrthographicProjection, With<MainCamera>)>,
+    window: Query<&Window, With<PrimaryWindow>>,
+    // mut zoom_transform: ResMut<Zoom>,
 ) {
-    // projection.area.
+    let window = window.single();
+    let window_size = Vec2::new(window.width(), window.height());
 
-    // projection.scale
+    let (mut transform, projection, _) = transform.single_mut();
+
+    // This event will only fire on macOS
+    for event in touchpad_magnify_events.read() {
+        info!("{:?}", event);
+        let d = event.0 * 1.3;
+        transform.scale += vec3(-d, d, 0.0);
+    }
+
+    for event in mouse_wheel_events.read() {
+        // zoom_transform.0.translation.x -= event.x;
+        // zoom_transform.0.translation.y += event.y;
+
+        info!("{:?}", event);
+
+        let proj_size = projection.area.size();
+        let world_units_per_device_pixel = proj_size / window_size;
+        let delta_world = vec2(event.x, event.y) * world_units_per_device_pixel;
+        let proposed_cam_transform = transform.translation - delta_world.extend(0.0);
+
+        transform.translation = proposed_cam_transform;
+    }
+
+    // camera_query.single().0.view
 
     // if input.pressed(KeyCode::Minus) {
     //     projection.scale += 0.2;
@@ -88,15 +132,26 @@ fn zoom_control_system(
     // projection.scale = projection.scale.clamp(0.2, 5.);
 }
 
-fn update_camera_transform(
-    mut transform: Query<&mut Transform, With<MainCamera>>,
+fn camera_movement(
+    mut transform: Query<(&mut Transform, &OrthographicProjection, With<MainCamera>)>,
     window: Query<&Window, With<PrimaryWindow>>,
+    // zoom_transform: Res<Zoom>,
 ) {
-    let window = window.single();
-    let mut transform = transform.single_mut();
+    // let window = window.single();
+    // let window_size = Vec2::new(window.width(), window.height());
 
-    transform.translation = vec3(window.width() / 2.0, window.height() / 2.0, 0.0);
-    transform.scale = vec3(1.0, -1.0, 1.0);
+    // let (mut transform, projection, _) = transform.single_mut();
+
+    // let proj_size = projection.area.size();
+    // let world_units_per_device_pixel = proj_size / window_size;
+
+    // *transform.as_mut() = Transform::default()
+    //     .with_scale(vec3(1.0, -1.0, 1.0))
+    //     .with_translation(vec3(window.width() / 2.0, window.height() / 2.0, 0.0));
+    // //* zoom_transform.0;
+
+    // // transform.translation = vec3(window.width() / 2.0, window.height() / 2.0, 0.0);
+    // // transform.scale = vec3(1.0, -1.0, 1.0);
 }
 
 fn add_first_boxes(
@@ -105,15 +160,20 @@ fn add_first_boxes(
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<ColorMaterial>>,
 ) {
-    let rect = Rect::from_corners((100.0, 50.0).into(), (300.0, 250.0).into());
+    let pos = vec2(100.0, 50.0);
+    let size = vec2(200.0, 200.0);
 
     commands.spawn(Square {
-        coords: SquareCoords(rect, drags.0),
+        coords: SquareCoords {
+            pos,
+            size,
+            z: drags.0,
+        },
         mesh: MaterialMesh2dBundle {
             mesh: meshes
                 .add(Mesh::from(shape::Box::from_corners(
-                    rect.min.extend(0.0),
-                    rect.max.extend(0.0),
+                    pos.extend(0.0),
+                    (pos + size).extend(0.0),
                 )))
                 .into(),
             material: materials.add(ColorMaterial::from(Color::PINK)),
@@ -122,15 +182,20 @@ fn add_first_boxes(
     });
     drags.0 += 1;
 
-    let rect = Rect::from_corners((260.0, 170.0).into(), (360.0, 270.0).into());
+    let pos = vec2(260.0, 170.0);
+    let size = vec2(100.0, 100.0);
 
     commands.spawn(Square {
-        coords: SquareCoords(rect, drags.0),
+        coords: SquareCoords {
+            pos,
+            size,
+            z: drags.0,
+        },
         mesh: MaterialMesh2dBundle {
             mesh: meshes
                 .add(Mesh::from(shape::Box::from_corners(
-                    rect.min.extend(0.0),
-                    rect.max.extend(0.0),
+                    pos.extend(0.0),
+                    (pos + size).extend(0.0),
                 )))
                 .into(),
             material: materials.add(ColorMaterial::from(Color::YELLOW)),
@@ -145,20 +210,19 @@ struct Drags(usize);
 
 #[derive(Debug, Component)]
 struct DragState {
-    entity: Entity,
     down: Vec2,
     drag_no: usize,
-    start_rect: Rect,
+    start_pos: Vec2,
 }
 
 fn drag_cursor_icon(
     dragging: Query<&DragState>,
-    mouse_pos: Res<MousePos>,
+    mouse_pos: Res<MouseWorldPos>,
     mut windows: Query<&mut Window>,
     square: Query<&SquareCoords>,
 ) {
     let is_dragging = !dragging.is_empty();
-    let is_hovering = square.iter().any(|coords| coords.0.contains(mouse_pos.0));
+    let is_hovering = square.iter().any(|coords| coords.contains(mouse_pos.0));
 
     windows.single_mut().cursor.icon = match (is_dragging, is_hovering) {
         (true, _) => CursorIcon::Grabbing,
@@ -171,23 +235,20 @@ fn drag_start(
     mut commands: Commands,
     dragging: Query<&DragState>,
     mut drags: ResMut<Drags>,
-    pos: Res<MousePos>,
+    mouse_pos: Res<MouseWorldPos>,
     mouse: Res<Input<MouseButton>>,
     square: Query<(Entity, &SquareCoords)>,
 ) {
     if mouse.just_pressed(MouseButton::Left) && dragging.is_empty() {
-        info!("mouse at {:?}", pos);
-
         if let Some((entity, coords)) = square
             .iter()
-            .filter(|(_, coords)| coords.0.contains(pos.0))
-            .max_by_key(|(_, coords)| coords.1)
+            .filter(|&(_, coords)| coords.contains(mouse_pos.0))
+            .max_by_key(|&(_, coords)| coords.z)
         {
             commands.get_entity(entity).unwrap().insert(DragState {
-                entity,
-                down: pos.0,
+                down: mouse_pos.0,
                 drag_no: drags.0,
-                start_rect: coords.0,
+                start_pos: coords.pos,
             });
 
             drags.0 += 1;
@@ -196,23 +257,20 @@ fn drag_start(
 }
 
 fn drag_move(
-    pos: Res<MousePos>,
+    mouse_pos: Res<MouseWorldPos>,
     mut dragging: Query<(Entity, &DragState, &mut Mesh2dHandle, &mut SquareCoords)>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
     if let Some((_, drag_state, mut mesh_handle, mut coords)) = dragging.get_single_mut().ok() {
-        let d = pos.0 - drag_state.down;
-        let mut new_rect = drag_state.start_rect;
-        new_rect.min += d;
-        new_rect.max += d;
+        let d = mouse_pos.0 - drag_state.down;
 
         mesh_handle.0 = meshes.add(Mesh::from(shape::Box::from_corners(
-            new_rect.min.extend(0.0),
-            new_rect.max.extend(0.0),
+            (drag_state.start_pos + d).extend(0.0),
+            (drag_state.start_pos + d + coords.size).extend(0.0),
         )));
 
-        coords.0 = new_rect;
-        coords.1 = drag_state.drag_no;
+        coords.pos = drag_state.start_pos + d;
+        coords.z = drag_state.drag_no;
     }
 }
 
@@ -222,12 +280,12 @@ fn drag_end(
     mut dragging: Query<(Entity, &DragState, &mut Mesh2dHandle, &SquareCoords)>,
     mut meshes: ResMut<Assets<Mesh>>,
 ) {
-    if let Some((entity, drag_state, mut mesh_handle, mut coords)) = dragging.get_single_mut().ok()
+    if let Some((entity, _, mut mesh_handle, coords)) = dragging.get_single_mut().ok()
         && mouse.just_released(MouseButton::Left)
     {
         mesh_handle.0 = meshes.add(Mesh::from(shape::Box::from_corners(
-            coords.0.min.extend(0.0),
-            coords.0.max.extend(0.0),
+            coords.pos.extend(0.0),
+            (coords.pos + coords.size).extend(0.0),
         )));
 
         commands.get_entity(entity).unwrap().remove::<DragState>();
