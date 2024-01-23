@@ -1,9 +1,6 @@
 #![feature(let_chains)]
 
-use crate::{
-    mouse::{InitMyMouseTracking, MyMouseTrackingPlugin},
-    square::Square,
-};
+use crate::mouse::{InitMyMouseTracking, MyMouseTrackingPlugin};
 use bevy::{
     input::{
         mouse::{MouseButtonInput, MouseMotion, MouseWheel},
@@ -11,18 +8,17 @@ use bevy::{
     },
     math::{vec2, vec3},
     prelude::*,
-    sprite::{MaterialMesh2dBundle, Mesh2dHandle},
     window::PrimaryWindow,
 };
 use mouse::MouseWorldPos;
-use square::SquareCoords;
+use square::{add_first_boxes, update_dialog_node_meshes, DialogInfo};
 
 pub mod mouse;
 pub mod square;
 pub mod util;
 pub mod wall;
 
-const TIMESTEP: f64 = 1. / 60.0;
+// const TIMESTEP: f64 = 1. / 60.0;
 
 fn main() {
     App::new()
@@ -40,18 +36,15 @@ fn main() {
         ))
         .add_systems(Startup, (setup, add_first_boxes).chain())
         .add_systems(Update, zoom_control_system)
+        .add_systems(Update, update_camera_transform)
         .add_systems(Update, camera_movement)
-        .insert_resource(Time::<Fixed>::from_seconds(TIMESTEP))
+        // .insert_resource(Time::<Fixed>::from_seconds(TIMESTEP))
         .add_systems(Update, print_mouse_events_system)
         .add_systems(Update, drag_cursor_icon)
         .add_systems(Update, drag_start)
         .add_systems(Update, drag_move)
         .add_systems(Update, drag_end)
-        .add_systems(Update, |mut q: Query<(&mut Transform, &SquareCoords)>| {
-            for (mut transform, coords) in &mut q {
-                transform.translation.z = coords.z as f32;
-            }
-        })
+        .add_systems(Update, update_dialog_node_meshes)
         // .add_systems(FixedUpdate, |pos: Res<MousePos>| {
         //     info!("mouse at {:?}", pos);
         // })
@@ -70,11 +63,13 @@ struct MainCamera;
 fn setup(mut commands: Commands, window: Query<&Window, With<PrimaryWindow>>) {
     let window = window.single();
 
+    // window *
+
     commands
         .spawn((
             Camera2dBundle {
                 transform: Transform::default()
-                    .with_scale(vec3(1.0, -1.0, 1.0))
+                    .with_scale(vec3(1.0, 1.0, 1.0))
                     .with_translation(vec3(window.width() / 2.0, window.height() / 2.0, 0.0)),
                 ..Default::default()
             },
@@ -91,6 +86,7 @@ fn zoom_control_system(
     // mut camera_query: Query<(&Camera, &mut OrthographicProjection)>,
     mut transform: Query<(&mut Transform, &OrthographicProjection, With<MainCamera>)>,
     window: Query<&Window, With<PrimaryWindow>>,
+    mouse_pos: Res<MouseWorldPos>,
     // mut zoom_transform: ResMut<Zoom>,
 ) {
     let window = window.single();
@@ -98,38 +94,47 @@ fn zoom_control_system(
 
     let (mut transform, projection, _) = transform.single_mut();
 
-    // This event will only fire on macOS
-    for event in touchpad_magnify_events.read() {
-        info!("{:?}", event);
-        let d = event.0 * 1.3;
-        transform.scale += vec3(-d, d, 0.0);
-    }
+    println!("camera transform: {:?}", transform);
 
-    for event in mouse_wheel_events.read() {
-        // zoom_transform.0.translation.x -= event.x;
-        // zoom_transform.0.translation.y += event.y;
+    // // This event will only fire on macOS
+    // for event in touchpad_magnify_events.read() {
+    //     let old_scale = transform.scale.x.abs();
+    //     info!("{old_scale}, {:?}", event);
+    //     let new_scale = event.0 * 1.5 * old_scale;
 
-        info!("{:?}", event);
+    //     // transform.scale += vec3(new_scale, -new_scale, 0.0);
 
-        let proj_size = projection.area.size();
-        let world_units_per_device_pixel = proj_size / window_size;
-        let delta_world = vec2(event.x, event.y) * world_units_per_device_pixel;
-        let proposed_cam_transform = transform.translation - delta_world.extend(0.0);
-
-        transform.translation = proposed_cam_transform;
-    }
-
-    // camera_query.single().0.view
-
-    // if input.pressed(KeyCode::Minus) {
-    //     projection.scale += 0.2;
+    //     // transform.translation = vec3(
+    //     //     mouse_pos.0.x - (new_scale / old_scale) * (mouse_pos.0.x - transform.translation.x), // - window.width() / 2.0,
+    //     //     mouse_pos.0.y - (new_scale / old_scale) * (mouse_pos.0.y - transform.translation.y), // - window.height() / 2.0,
+    //     //     0.0,
+    //     // );
     // }
 
-    // if input.pressed(KeyCode::Equals) {
-    //     projection.scale -= 0.2;
-    // }
+    // for event in mouse_wheel_events.read() {
+    //     // zoom_transform.0.translation.x -= event.x;
+    //     // zoom_transform.0.translation.y += event.y;
 
-    // projection.scale = projection.scale.clamp(0.2, 5.);
+    //     info!("{:?}", event);
+
+    //     let proj_size = projection.area.size();
+    //     let world_units_per_device_pixel = proj_size / window_size;
+    //     let delta_world = vec2(event.x, event.y) * world_units_per_device_pixel;
+    //     let proposed_cam_transform = transform.translation - delta_world.extend(0.0);
+
+    //     transform.translation = proposed_cam_transform;
+    // }
+}
+
+fn update_camera_transform(
+    mut transform: Query<&mut Transform, With<MainCamera>>,
+    window: Query<&Window, With<PrimaryWindow>>,
+) {
+    let window = window.single();
+    let mut transform = transform.single_mut();
+
+    // transform.translation = vec3(window.width() / 2.0, window.height() / 2.0, 0.0);
+    // transform.scale = vec3(1.0, -1.0, 1.0);
 }
 
 fn camera_movement(
@@ -154,59 +159,8 @@ fn camera_movement(
     // // transform.scale = vec3(1.0, -1.0, 1.0);
 }
 
-fn add_first_boxes(
-    mut commands: Commands,
-    mut drags: ResMut<Drags>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    let pos = vec2(100.0, 50.0);
-    let size = vec2(200.0, 200.0);
-
-    commands.spawn(Square {
-        coords: SquareCoords {
-            pos,
-            size,
-            z: drags.0,
-        },
-        mesh: MaterialMesh2dBundle {
-            mesh: meshes
-                .add(Mesh::from(shape::Box::from_corners(
-                    pos.extend(0.0),
-                    (pos + size).extend(0.0),
-                )))
-                .into(),
-            material: materials.add(ColorMaterial::from(Color::PINK)),
-            ..default()
-        },
-    });
-    drags.0 += 1;
-
-    let pos = vec2(260.0, 170.0);
-    let size = vec2(100.0, 100.0);
-
-    commands.spawn(Square {
-        coords: SquareCoords {
-            pos,
-            size,
-            z: drags.0,
-        },
-        mesh: MaterialMesh2dBundle {
-            mesh: meshes
-                .add(Mesh::from(shape::Box::from_corners(
-                    pos.extend(0.0),
-                    (pos + size).extend(0.0),
-                )))
-                .into(),
-            material: materials.add(ColorMaterial::from(Color::YELLOW)),
-            ..default()
-        },
-    });
-    drags.0 += 1;
-}
-
 #[derive(Resource)]
-struct Drags(usize);
+pub struct Drags(pub usize);
 
 #[derive(Debug, Component)]
 struct DragState {
@@ -219,7 +173,7 @@ fn drag_cursor_icon(
     dragging: Query<&DragState>,
     mouse_pos: Res<MouseWorldPos>,
     mut windows: Query<&mut Window>,
-    square: Query<&SquareCoords>,
+    square: Query<&DialogInfo>,
 ) {
     let is_dragging = !dragging.is_empty();
     let is_hovering = square.iter().any(|coords| coords.contains(mouse_pos.0));
@@ -237,7 +191,7 @@ fn drag_start(
     mut drags: ResMut<Drags>,
     mouse_pos: Res<MouseWorldPos>,
     mouse: Res<Input<MouseButton>>,
-    square: Query<(Entity, &SquareCoords)>,
+    square: Query<(Entity, &DialogInfo)>,
 ) {
     if mouse.just_pressed(MouseButton::Left) && dragging.is_empty() {
         if let Some((entity, coords)) = square
@@ -258,16 +212,10 @@ fn drag_start(
 
 fn drag_move(
     mouse_pos: Res<MouseWorldPos>,
-    mut dragging: Query<(Entity, &DragState, &mut Mesh2dHandle, &mut SquareCoords)>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut dragging: Query<(Entity, &DragState, &mut DialogInfo)>,
 ) {
-    if let Some((_, drag_state, mut mesh_handle, mut coords)) = dragging.get_single_mut().ok() {
+    if let Some((_, drag_state, mut coords)) = dragging.get_single_mut().ok() {
         let d = mouse_pos.0 - drag_state.down;
-
-        mesh_handle.0 = meshes.add(Mesh::from(shape::Box::from_corners(
-            (drag_state.start_pos + d).extend(0.0),
-            (drag_state.start_pos + d + coords.size).extend(0.0),
-        )));
 
         coords.pos = drag_state.start_pos + d;
         coords.z = drag_state.drag_no;
@@ -277,17 +225,11 @@ fn drag_move(
 fn drag_end(
     mut commands: Commands,
     mouse: Res<Input<MouseButton>>,
-    mut dragging: Query<(Entity, &DragState, &mut Mesh2dHandle, &SquareCoords)>,
-    mut meshes: ResMut<Assets<Mesh>>,
+    mut dragging: Query<(Entity, &DragState, &DialogInfo)>,
 ) {
-    if let Some((entity, _, mut mesh_handle, coords)) = dragging.get_single_mut().ok()
+    if let Some((entity, _, coords)) = dragging.get_single_mut().ok()
         && mouse.just_released(MouseButton::Left)
     {
-        mesh_handle.0 = meshes.add(Mesh::from(shape::Box::from_corners(
-            coords.pos.extend(0.0),
-            (coords.pos + coords.size).extend(0.0),
-        )));
-
         commands.get_entity(entity).unwrap().remove::<DragState>();
     }
 }

@@ -10,12 +10,8 @@ pub struct MyMouseTrackingPlugin;
 
 impl Plugin for MyMouseTrackingPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(Startup, setup).add_systems(Update, update);
+        app.add_systems(Update, update);
     }
-}
-
-fn setup(mut commands: Commands, window: Query<&Window, With<PrimaryWindow>>) {
-    // nothing to do here, really..
 }
 
 fn update(
