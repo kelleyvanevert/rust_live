@@ -2,11 +2,12 @@
 
 use crate::mouse::{InitMyMouseTracking, MyMouseTrackingPlugin};
 use bevy::{
+    diagnostic::FrameTimeDiagnosticsPlugin,
     input::{
         mouse::{MouseButtonInput, MouseMotion, MouseWheel},
         touchpad::{TouchpadMagnify, TouchpadRotate},
     },
-    math::{vec2, vec3},
+    math::vec3,
     prelude::*,
     window::PrimaryWindow,
 };
@@ -22,8 +23,8 @@ pub mod wall;
 
 fn main() {
     App::new()
-        .insert_resource(ClearColor(Color::rgb(0.1, 0.1, 0.1)))
-        .insert_resource(Drags(0))
+        .insert_resource(ClearColor(Color::rgb(1.0, 1.0, 1.0)))
+        .insert_resource(NumDrags(0))
         .add_plugins((
             DefaultPlugins.set(WindowPlugin {
                 primary_window: Some(Window {
@@ -33,6 +34,8 @@ fn main() {
                 ..default()
             }),
             MyMouseTrackingPlugin,
+            FrameTimeDiagnosticsPlugin,
+            // LogDiagnosticsPlugin::default(),
         ))
         .add_systems(Startup, (setup, add_first_boxes).chain())
         .add_systems(Update, zoom_control_system)
@@ -63,13 +66,17 @@ struct MainCamera;
 fn setup(mut commands: Commands, window: Query<&Window, With<PrimaryWindow>>) {
     let window = window.single();
 
-    // window *
+    // (canvas + translation) * scale = world
+
+    // world / scale - translation = canvas
+
+    // ()
 
     commands
         .spawn((
             Camera2dBundle {
                 transform: Transform::default()
-                    .with_scale(vec3(1.0, 1.0, 1.0))
+                    .with_scale(vec3(1.0, -1.0, 1.0))
                     .with_translation(vec3(window.width() / 2.0, window.height() / 2.0, 0.0)),
                 ..Default::default()
             },
@@ -94,7 +101,7 @@ fn zoom_control_system(
 
     let (mut transform, projection, _) = transform.single_mut();
 
-    println!("camera transform: {:?}", transform);
+    // println!("camera transform: {:?}", transform);
 
     // // This event will only fire on macOS
     // for event in touchpad_magnify_events.read() {
@@ -160,12 +167,12 @@ fn camera_movement(
 }
 
 #[derive(Resource)]
-pub struct Drags(pub usize);
+pub struct NumDrags(pub i32);
 
 #[derive(Debug, Component)]
 struct DragState {
     down: Vec2,
-    drag_no: usize,
+    drag_no: i32,
     start_pos: Vec2,
 }
 
@@ -176,7 +183,9 @@ fn drag_cursor_icon(
     square: Query<&DialogInfo>,
 ) {
     let is_dragging = !dragging.is_empty();
-    let is_hovering = square.iter().any(|coords| coords.contains(mouse_pos.0));
+    let is_hovering = square
+        .iter()
+        .any(|info: &DialogInfo| info.contains(mouse_pos.0));
 
     windows.single_mut().cursor.icon = match (is_dragging, is_hovering) {
         (true, _) => CursorIcon::Grabbing,
@@ -188,24 +197,24 @@ fn drag_cursor_icon(
 fn drag_start(
     mut commands: Commands,
     dragging: Query<&DragState>,
-    mut drags: ResMut<Drags>,
+    mut drags: ResMut<NumDrags>,
     mouse_pos: Res<MouseWorldPos>,
     mouse: Res<Input<MouseButton>>,
     square: Query<(Entity, &DialogInfo)>,
 ) {
     if mouse.just_pressed(MouseButton::Left) && dragging.is_empty() {
-        if let Some((entity, coords)) = square
+        if let Some((entity, info)) = square
             .iter()
-            .filter(|&(_, coords)| coords.contains(mouse_pos.0))
-            .max_by_key(|&(_, coords)| coords.z)
+            .filter(|&(_, info)| info.contains(mouse_pos.0))
+            .max_by_key(|&(_, info)| info.z)
         {
+            drags.0 += 1;
+
             commands.get_entity(entity).unwrap().insert(DragState {
                 down: mouse_pos.0,
                 drag_no: drags.0,
-                start_pos: coords.pos,
+                start_pos: info.pos,
             });
-
-            drags.0 += 1;
         }
     }
 }
@@ -214,11 +223,11 @@ fn drag_move(
     mouse_pos: Res<MouseWorldPos>,
     mut dragging: Query<(Entity, &DragState, &mut DialogInfo)>,
 ) {
-    if let Some((_, drag_state, mut coords)) = dragging.get_single_mut().ok() {
+    if let Some((_, drag_state, mut info)) = dragging.get_single_mut().ok() {
         let d = mouse_pos.0 - drag_state.down;
 
-        coords.pos = drag_state.start_pos + d;
-        coords.z = drag_state.drag_no;
+        info.pos = drag_state.start_pos + d;
+        info.z = drag_state.drag_no;
     }
 }
 
@@ -227,7 +236,7 @@ fn drag_end(
     mouse: Res<Input<MouseButton>>,
     mut dragging: Query<(Entity, &DragState, &DialogInfo)>,
 ) {
-    if let Some((entity, _, coords)) = dragging.get_single_mut().ok()
+    if let Some((entity, _, info)) = dragging.get_single_mut().ok()
         && mouse.just_released(MouseButton::Left)
     {
         commands.get_entity(entity).unwrap().remove::<DragState>();

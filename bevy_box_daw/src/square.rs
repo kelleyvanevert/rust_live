@@ -4,19 +4,20 @@ use bevy::{
     sprite::{MaterialMesh2dBundle, Mesh2dHandle},
 };
 
-use crate::Drags;
+use crate::NumDrags;
 
-#[derive(Bundle)]
-pub struct DialogNode {
-    pub info: DialogInfo,
-    pub mesh: MaterialMesh2dBundle<ColorMaterial>,
-}
+// #[derive(Bundle)]
+// pub struct DialogNode {
+//     pub info: DialogInfo,
+//     pub mesh: MaterialMesh2dBundle<ColorMaterial>,
+// }
 
 #[derive(Component)]
 pub struct DialogInfo {
     pub pos: Vec2,
     pub size: Vec2,
-    pub z: usize,
+    pub color: Color,
+    pub z: i32,
 }
 
 impl DialogInfo {
@@ -25,74 +26,71 @@ impl DialogInfo {
     }
 }
 
-pub fn add_first_boxes(
-    mut commands: Commands,
-    mut drags: ResMut<Drags>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<ColorMaterial>>,
-) {
-    let pos = vec2(10.0, 10.0);
-    let size = vec2(200.0, 200.0);
-    let z = drags.0;
-    drags.0 += 1;
-
-    commands.spawn(DialogNode {
-        info: DialogInfo {
-            pos,
-            size,
-            z: drags.0,
-        },
-        mesh: MaterialMesh2dBundle {
-            mesh: meshes
-                .add(Mesh::from(shape::Box::from_corners(
-                    Vec3::splat(0.0),
-                    size.extend(0.0),
-                )))
-                .into(),
-            material: materials.add(ColorMaterial::from(Color::YELLOW)),
-            transform: Transform::from_translation(pos.extend(z as f32)),
+fn add_dialog_node(commands: &mut Commands, info: DialogInfo) {
+    commands.spawn(NodeBundle {
+        style: Style {
+            width: Val::Px(info.size.x),
+            height: Val::Px(info.size.y),
+            position_type: PositionType::Absolute,
+            left: Val::Px(info.pos.x),
+            top: Val::Px(info.pos.y),
             ..default()
         },
-    });
-
-    let pos = vec2(260.0, 170.0);
-    let size = vec2(100.0, 100.0);
-    let z = drags.0;
-    drags.0 += 1;
-
-    commands.spawn(DialogNode {
-        info: DialogInfo {
-            pos,
-            size,
-            z: drags.0,
-        },
-        mesh: MaterialMesh2dBundle {
-            mesh: meshes
-                .add(Mesh::from(shape::Box::from_corners(
-                    Vec3::splat(0.0),
-                    size.extend(0.0),
-                )))
-                .into(),
-            material: materials.add(ColorMaterial::from(Color::PINK)),
-            transform: Transform::from_translation(pos.extend(z as f32)),
-            ..default()
-        },
+        background_color: BackgroundColor(info.color),
+        z_index: ZIndex::Local(info.z),
+        ..default()
     });
 }
 
-pub fn update_dialog_node_meshes(
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut dragging: Query<(&DialogInfo, &mut Transform, &mut Mesh2dHandle), Changed<DialogInfo>>,
-) {
-    for (info, mut transform, mut mesh_handle) in &mut dragging {
-        *mesh_handle = meshes
-            .add(Mesh::from(shape::Box::from_corners(
-                Vec3::splat(0.0),
-                info.size.extend(0.0),
-            )))
-            .into();
+pub fn add_first_boxes(mut commands: Commands, mut drags: ResMut<NumDrags>) {
+    add_dialog_node(
+        &mut commands,
+        DialogInfo {
+            pos: vec2(10.0, 10.0),
+            size: vec2(200.0, 200.0),
+            color: Color::BLUE,
+            z: 0,
+        },
+    );
 
-        transform.translation = info.pos.extend(info.z as f32);
+    add_dialog_node(
+        &mut commands,
+        DialogInfo {
+            pos: vec2(260.0, 100.0),
+            size: vec2(100.0, 100.0),
+            color: Color::BLACK,
+            z: 1,
+        },
+    );
+
+    drags.0 = 2;
+}
+
+pub fn update_dialog_node_meshes(
+    mut dragging: Query<
+        (&DialogInfo, &mut Style, &mut ZIndex, &mut BackgroundColor),
+        Changed<DialogInfo>,
+    >,
+) {
+    for (info, mut style, mut z, mut bg_color) in &mut dragging {
+        // *mesh_handle = meshes
+        //     .add(Mesh::from(shape::Box::from_corners(
+        //         Vec3::splat(0.0),
+        //         info.size.extend(0.0),
+        //     )))
+        //     .into();
+
+        // transform.translation = info.pos.extend(info.z as f32);
+
+        style.width = Val::Px(info.size.x);
+        style.height = Val::Px(info.size.y);
+
+        style.left = Val::Px(info.pos.x);
+        style.top = Val::Px(info.pos.y);
+
+        bg_color.0 = info.color;
+
+        *z = ZIndex::Local(info.z);
     }
 }
 
